@@ -1,6 +1,6 @@
 {
   "name": "@vheins/opencode-9router",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "OpenCode plugin provider for 9Router — FREE AI Router & Token Saver. 40+ providers, 100+ models.",
   "author": "vheins",
   "keywords": [
@@ -36,11 +36,9 @@
     "build": "tsc",
     "prepublishOnly": "npm run build"
   },
-  "dependencies": {
-    "@opencode-ai/plugin": "^1.0.182",
-    "@opencode-ai/sdk": "^1.0.182"
-  },
   "devDependencies": {
+    "@opencode-ai/plugin": "^1.0.182",
+    "@opencode-ai/sdk": "^1.0.182",
     "typescript": "^5.9.3"
   }
 }

@@ -1,5 +1,4 @@
 import type { Hooks, Plugin, PluginInput } from "@opencode-ai/plugin";
-import type { Auth } from "@opencode-ai/sdk/v2";
 import {
   PLUGIN_NAME,
   PROVIDER_DISPLAY_NAME,
@@ -74,7 +73,7 @@ export const NineRouterPlugin: Plugin = async ({ client }: PluginInput) => {
     },
     auth: {
       provider: PLUGIN_NAME,
-      async loader(getAuth: () => Promise<Auth>) {
+      async loader(getAuth: () => Promise<Record<string, unknown>>) {
         const auth = await getAuth();
         if (auth && typeof auth === "object" && "baseURL" in auth) {
           return { baseURL: `${String(auth.baseURL)}${DEFAULT_API_PATH}` };
