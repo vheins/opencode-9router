@@ -2,29 +2,34 @@
 
 OpenCode plugin provider for [9Router](https://github.com/decolua/9router) — FREE AI Router & Token Saver. 40+ providers, 100+ models.
 
-Mendaftarkan 9Router sebagai custom provider di OpenCode dengan auto-discovery models dan konfigurasi baseURL via `/connect`.
+Mendaftarkan 9Router sebagai custom provider di OpenCode dengan auto-discovery models.
 
 ## Quick Start
 
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@vheins/opencode-9router@latest"]
+  "plugin": ["@vheins/opencode-9router@latest"],
+  "provider": {
+    "9router": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "9Router",
+      "options": {
+        "baseURL": "https://model.idsolutions.id/v1"
+      }
+    }
+  }
 }
 ```
 
-1. Tambahkan plugin ke `opencode.json`
+1. Tambahkan plugin dan provider ke `opencode.json`
 2. Restart OpenCode
-3. `/connect` → pilih **Connect to 9Router**
-4. Masukkan Base URL (default: `http://localhost:20128`) dan API Key
-5. `/models` → pilih model 9Router
+3. `/models` → pilih model 9Router
 
 ## Features
 
 - **Auto-discover models** — Models dari 9Router otomatis terdeteksi saat startup
-- **Configurable baseURL** — Atur Base URL via `/connect`, plugin options, atau environment variable
 - **Dynamic model list** — Semua model dari 9Router tersedia, termasuk combo kustom
-- **27+ fallback models** — Well-known models tersedia jika 9Router belum running
 - **OpenAI-compatible** — Menggunakan `@ai-sdk/openai-compatible`
 - **Type-safe** — Menggunakan `config` hook untuk registrasi provider yang sesuai dengan OpenCode config schema
 
@@ -35,11 +40,20 @@ Mendaftarkan 9Router sebagai custom provider di OpenCode dengan auto-discovery m
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@vheins/opencode-9router@latest"]
+  "plugin": ["@vheins/opencode-9router@latest"],
+  "provider": {
+    "9router": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "9Router",
+      "options": {
+        "baseURL": "https://model.idsolutions.id/v1"
+      }
+    }
+  }
 }
 ```
 
-Tidak perlu mendefinisikan models atau provider secara manual — plugin mendaftarkan semuanya otomatis.
+Plugin akan auto-discover models dari baseURL yang dikonfigurasi.
 
 ### Local file
 
@@ -50,14 +64,9 @@ cp src/constants.ts .opencode/plugins/constants.ts
 
 ## Usage
 
-### 1. Connect via `/connect`
+### 1. Configure provider
 
-```
-/connect
-  → Select: Connect to 9Router
-  → Base URL: http://localhost:20128  (customize if needed)
-  → API Key: [paste from 9Router Dashboard → Endpoints]
-```
+Tambahkan provider `9router` ke `opencode.json` dengan `baseURL` yang sesuai.
 
 ### 2. Select model
 
@@ -69,27 +78,20 @@ cp src/constants.ts .opencode/plugins/constants.ts
 
 ### Custom Base URL
 
-Jika 9Router berjalan di host/port berbeda, ada 3 cara konfigurasi:
-
-#### Via `/connect` (recommended)
-
-Masukkan URL custom saat diminta Base URL.
-
-#### Via plugin options
+Ubah `baseURL` di provider config sesuai kebutuhan:
 
 ```json
 {
-  "$schema": "https://opencode.ai/config.json",
-  "plugin": [
-    ["@vheins/opencode-9router@latest", { "baseURL": "http://192.168.1.100:20128" }]
-  ]
+  "provider": {
+    "9router": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "9Router",
+      "options": {
+        "baseURL": "http://localhost:20128/v1"
+      }
+    }
+  }
 }
-```
-
-#### Via environment variable
-
-```bash
-export ROUTER_BASE_URL=http://192.168.1.100:20128
 ```
 
 ## Model Prefixes
@@ -118,18 +120,14 @@ opencode.json "plugin": ["@vheins/opencode-9router@latest"]
 Bun installs package from npm
   ↓
 Plugin loads at startup:
-  1. Resolve baseURL (options > env > default)
-  2. Try GET /v1/models from 9Router (3s timeout)
+  1. Read provider config from opencode.json
+  2. Try GET /v1/models from baseURL (3s timeout)
   3. If OK → register live models
-  4. If fail → register 27 fallback models
+  4. If fail → log error, no models registered
   ↓
-config hook injects provider "9router" into OpenCode config
+config hook updates provider with discovered models
   ↓
 Provider "9router" appears in /models
-  ↓
-User runs /connect → enters baseURL + API key
-  ↓
-Auth loader overrides provider config with user's baseURL
 ```
 
 ## Development
