@@ -11,18 +11,28 @@ assert.equal(typeof hooks.config, "function", "hooks.config should be a function
 assert.equal(hooks.auth, undefined, "Plugin should not have auth hook");
 console.log("PASS");
 
-console.log("\n=== Test 2: Config hook — no provider configured ===");
+console.log("\n=== Test 2: Config hook — no pre-configured provider ===");
 const fakeConfig1 = {};
 await hooks.config(fakeConfig1);
-assert.deepEqual(fakeConfig1, {}, "Config should remain empty when provider not configured");
-console.log("PASS");
+assert.ok(fakeConfig1.provider, "Config should have provider after hook");
+assert.ok(fakeConfig1.provider["9router"], "Provider should have 9router entry");
+assert.equal(
+  fakeConfig1.provider["9router"].options.baseURL,
+  "http://localhost:20128/v1",
+  "Should use default baseURL"
+);
+const modelKeys1 = Object.keys(fakeConfig1.provider["9router"].models);
+console.log(`Models with default baseURL: ${modelKeys1.length}`);
+if (modelKeys1.length > 0) {
+  console.log("PASS (auto-discovered models from localhost)");
+} else {
+  console.log("PASS (no models — 9Router unreachable)");
+}
 
-console.log("\n=== Test 3: Config hook — provider configured with baseURL ===");
+console.log("\n=== Test 3: Config hook — pre-configured provider with custom baseURL ===");
 const fakeConfig2 = {
   provider: {
     "9router": {
-      npm: "@ai-sdk/openai-compatible",
-      name: "9Router",
       options: {
         baseURL: "http://localhost:20128",
       },
@@ -31,24 +41,24 @@ const fakeConfig2 = {
 };
 await hooks.config(fakeConfig2);
 assert.ok(fakeConfig2.provider["9router"], "Provider should still exist after hook");
-assert.ok(fakeConfig2.provider["9router"].options, "Provider should have options");
-console.log(`baseURL after hook: ${fakeConfig2.provider["9router"].options.baseURL}`);
-assert.ok(fakeConfig2.provider["9router"].options.baseURL.endsWith("/v1"), "baseURL should end with /v1");
+assert.equal(
+  fakeConfig2.provider["9router"].options.baseURL,
+  "http://localhost:20128/v1",
+  "Should append /v1"
+);
 assert.ok(fakeConfig2.provider["9router"].models, "Provider should have models");
-const modelKeys = Object.keys(fakeConfig2.provider["9router"].models);
-console.log(`Models discovered: ${modelKeys.length}`);
-if (modelKeys.length > 0) {
-  console.log("PASS (auto-discovered models from localhost)");
+const modelKeys2 = Object.keys(fakeConfig2.provider["9router"].models);
+console.log(`Models discovered: ${modelKeys2.length}`);
+if (modelKeys2.length > 0) {
+  console.log("PASS (auto-discovered models from custom baseURL)");
 } else {
   console.log("PASS (no models — 9Router unreachable)");
 }
 
-console.log("\n=== Test 4: Config hook — custom baseURL ===");
+console.log("\n=== Test 4: Config hook — baseURL with /v1 already ===");
 const fakeConfig3 = {
   provider: {
     "9router": {
-      npm: "@ai-sdk/openai-compatible",
-      name: "9Router",
       options: {
         baseURL: "http://localhost:20128/v1",
       },
@@ -65,7 +75,7 @@ console.log("PASS");
 
 console.log("\n=== Test 5: JSON serialization ===");
 try {
-  const serialized = JSON.stringify(fakeConfig2);
+  const serialized = JSON.stringify(fakeConfig1);
   JSON.parse(serialized);
   console.log("PASS");
 } catch (e) {

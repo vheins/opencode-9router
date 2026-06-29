@@ -9,22 +9,15 @@ Mendaftarkan 9Router sebagai custom provider di OpenCode dengan auto-discovery m
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@vheins/opencode-9router@latest"],
-  "provider": {
-    "9router": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "9Router",
-      "options": {
-        "baseURL": "https://model.idsolutions.id/v1"
-      }
-    }
-  }
+  "plugin": ["@vheins/opencode-9router@0.5.0"]
 }
 ```
 
-1. Tambahkan plugin dan provider ke `opencode.json`
+1. Tambahkan plugin ke `opencode.json`
 2. Restart OpenCode
 3. `/models` → pilih model 9Router
+
+Plugin akan auto-discover models dari `http://localhost:20128` (default).
 
 ## Features
 
@@ -40,11 +33,22 @@ Mendaftarkan 9Router sebagai custom provider di OpenCode dengan auto-discovery m
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@vheins/opencode-9router@latest"],
+  "plugin": ["@vheins/opencode-9router@0.5.0"]
+}
+```
+
+Tidak perlu mendefinisikan provider secara manual — plugin mendaftarkannya otomatis.
+
+### Custom Base URL
+
+Jika 9Router berjalan di host/port berbeda, tambahkan provider config:
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["@vheins/opencode-9router@0.5.0"],
   "provider": {
     "9router": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "9Router",
       "options": {
         "baseURL": "https://model.idsolutions.id/v1"
       }
@@ -53,45 +57,51 @@ Mendaftarkan 9Router sebagai custom provider di OpenCode dengan auto-discovery m
 }
 ```
 
-Plugin akan auto-discover models dari baseURL yang dikonfigurasi.
+### With API Key
 
-### Local file
-
-```bash
-cp src/plugin.ts .opencode/plugins/9router-provider.ts
-cp src/constants.ts .opencode/plugins/constants.ts
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["@vheins/opencode-9router@0.5.0"],
+  "provider": {
+    "9router": {
+      "options": {
+        "baseURL": "https://model.idsolutions.id/v1",
+        "apiKey": "your-api-key-here"
+      }
+    }
+  }
+}
 ```
 
-## Usage
-
-### 1. Configure provider
-
-Tambahkan provider `9router` ke `opencode.json` dengan `baseURL` yang sesuai.
-
-### 2. Select model
-
-```
-/models
-  → Find 9Router provider
-  → Pick any model (e.g., kr/claude-sonnet-4.5, cc/claude-opus-4-7)
-```
-
-### Custom Base URL
-
-Ubah `baseURL` di provider config sesuai kebutuhan:
+Atau pakai environment variable:
 
 ```json
 {
   "provider": {
     "9router": {
-      "npm": "@ai-sdk/openai-compatible",
-      "name": "9Router",
       "options": {
-        "baseURL": "http://localhost:20128/v1"
+        "baseURL": "https://model.idsolutions.id/v1",
+        "apiKey": "{env:ROUTER_API_KEY}"
       }
     }
   }
 }
+```
+
+```bash
+export ROUTER_API_KEY=your-api-key-here
+opencode
+```
+
+## Usage
+
+### Select model
+
+```
+/models
+  → Find 9Router provider
+  → Pick any model (e.g., kr/claude-sonnet-4.5, cc/claude-opus-4-7)
 ```
 
 ## Model Prefixes
@@ -115,17 +125,17 @@ Ubah `baseURL` di provider config sesuai kebutuhan:
 ## How It Works
 
 ```
-opencode.json "plugin": ["@vheins/opencode-9router@latest"]
+opencode.json "plugin": ["@vheins/opencode-9router@0.5.0"]
   ↓
 Bun installs package from npm
   ↓
 Plugin loads at startup:
-  1. Read provider config from opencode.json
+  1. Read baseURL from provider config (or use default http://localhost:20128)
   2. Try GET /v1/models from baseURL (3s timeout)
   3. If OK → register live models
-  4. If fail → log error, no models registered
+  4. If fail → log warning, no models registered
   ↓
-config hook updates provider with discovered models
+config hook creates/updates provider "9router" with discovered models
   ↓
 Provider "9router" appears in /models
 ```

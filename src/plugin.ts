@@ -68,37 +68,30 @@ export const NineRouterPlugin: Plugin = async ({ client }: PluginInput) => {
 
   return {
     config: async (config) => {
-      if (!config.provider) {
-        await log("info", "9Router provider not configured. Add it to opencode.json provider section.");
-        return;
-      }
-
-      const existingProvider = config.provider[PLUGIN_NAME];
-      if (!existingProvider) {
-        await log("info", "9Router provider not configured. Add it to opencode.json provider section.");
-        return;
-      }
-
-      const options = existingProvider.options as Record<string, unknown> | undefined;
-      const baseURL = options?.baseURL as string | undefined;
-      if (!baseURL) {
-        await log("warn", "9Router provider missing baseURL option.");
-        return;
-      }
+      const existingProvider = config.provider?.[PLUGIN_NAME];
+      const options = existingProvider?.options as Record<string, unknown> | undefined;
+      const baseURL = (options?.baseURL as string | undefined) ?? DEFAULT_BASE_URL;
 
       const normalizedURL = normalizeBaseURL(baseURL);
       const apiURL = ensureAPIPath(normalizedURL);
 
       const discovered = await discoverModels(normalizedURL);
+      
+      config.provider ??= {};
+      config.provider[PLUGIN_NAME] = {
+        npm: "@ai-sdk/openai-compatible",
+        name: PROVIDER_DISPLAY_NAME,
+        options: {
+          ...options,
+          baseURL: apiURL,
+        },
+        models: discovered ?? {},
+      };
+
       if (discovered) {
-        config.provider[PLUGIN_NAME] = {
-          ...existingProvider,
-          options: { ...options, baseURL: apiURL },
-          models: discovered,
-        };
         await log("info", `Discovered ${Object.keys(discovered).length} models from ${apiURL}`);
       } else {
-        await log("error", `Failed to discover models from ${apiURL}. Check if 9Router is running and accessible.`);
+        await log("warn", `Failed to discover models from ${apiURL}. Check if 9Router is running and accessible.`);
       }
     },
   } satisfies Hooks;
