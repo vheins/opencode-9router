@@ -26,11 +26,17 @@ function ensureAPIPath(baseURL: string): string {
 
 async function discoverModels(
   baseURL: string,
+  apiKey?: string,
 ): Promise<Record<string, { name: string }> | null> {
   const apiURL = ensureAPIPath(baseURL);
   try {
+    const headers: Record<string, string> = {};
+    if (apiKey) {
+      headers["Authorization"] = `Bearer ${apiKey}`;
+    }
     const response = await fetch(`${apiURL}/models`, {
       signal: AbortSignal.timeout(3000),
+      headers,
     });
     if (!response.ok) return null;
 
@@ -71,11 +77,12 @@ export const NineRouterPlugin: Plugin = async ({ client }: PluginInput) => {
       const existingProvider = config.provider?.[PLUGIN_NAME];
       const options = existingProvider?.options as Record<string, unknown> | undefined;
       const baseURL = (options?.baseURL as string | undefined) ?? DEFAULT_BASE_URL;
+      const apiKey = options?.apiKey as string | undefined;
 
       const normalizedURL = normalizeBaseURL(baseURL);
       const apiURL = ensureAPIPath(normalizedURL);
 
-      const discovered = await discoverModels(normalizedURL);
+      const discovered = await discoverModels(normalizedURL, apiKey);
       
       config.provider ??= {};
       config.provider[PLUGIN_NAME] = {
