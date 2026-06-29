@@ -4,7 +4,6 @@ import {
   PROVIDER_DISPLAY_NAME,
   DEFAULT_BASE_URL,
   DEFAULT_API_PATH,
-  FALLBACK_MODELS,
   KNOWN_PROVIDER_PREFIXES,
 } from "./constants.js";
 
@@ -70,16 +69,14 @@ export const NineRouterPlugin: Plugin = async (
   options?: PluginOptions,
 ) => {
   const configuredBaseURL = resolveBaseURL(options);
-
   const discovered = await discoverModels(configuredBaseURL);
-  const models = discovered ?? FALLBACK_MODELS;
 
   if (!discovered && client?.app?.log) {
     await client.app.log({
       body: {
         service: "9router-provider",
-        level: "warn",
-        message: `9Router not reachable at ${configuredBaseURL}. Using well-known model list. Start 9Router and restart opencode to auto-discover models.`,
+        level: "error",
+        message: `9Router not reachable at ${configuredBaseURL}. Please check if 9Router is running and accessible.`,
       },
     });
   }
@@ -93,7 +90,7 @@ export const NineRouterPlugin: Plugin = async (
         options: {
           baseURL: ensureAPIPath(configuredBaseURL),
         },
-        models,
+        models: discovered ?? {},
       };
     },
     auth: {
@@ -115,11 +112,6 @@ export const NineRouterPlugin: Plugin = async (
               type: "text" as const,
               message: `${PROVIDER_DISPLAY_NAME} Base URL (default: ${DEFAULT_BASE_URL})`,
               key: "baseURL",
-            },
-            {
-              type: "text" as const,
-              message: `${PROVIDER_DISPLAY_NAME} API Key (from Dashboard → Endpoints)`,
-              key: "apiKey",
             },
           ],
         },

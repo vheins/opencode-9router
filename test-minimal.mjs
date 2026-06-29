@@ -12,19 +12,18 @@ assert.equal(typeof hooks.auth, "object", "hooks.auth should be an object");
 assert.equal(hooks.auth.provider, "9router", "auth.provider should be '9router'");
 console.log("PASS");
 
-console.log("\n=== Test 2: Auth methods ===");
+console.log("\n=== Test 2: Auth methods — no apiKey prompt ===");
 assert.ok(Array.isArray(hooks.auth.methods), "auth.methods should be an array");
 assert.equal(hooks.auth.methods.length, 1, "Should have 1 auth method");
 assert.equal(hooks.auth.methods[0].type, "api", "Auth method should be type 'api'");
 assert.ok(hooks.auth.methods[0].label.includes("9Router"), "Label should mention 9Router");
 const prompts = hooks.auth.methods[0].prompts;
 assert.ok(Array.isArray(prompts), "Method should have prompts");
-assert.equal(prompts.length, 2, "Should have 2 prompts (baseURL + apiKey)");
-assert.equal(prompts[0].key, "baseURL", "First prompt key should be baseURL");
-assert.equal(prompts[1].key, "apiKey", "Second prompt key should be apiKey");
+assert.equal(prompts.length, 1, "Should have 1 prompt (baseURL only, no apiKey)");
+assert.equal(prompts[0].key, "baseURL", "Prompt key should be baseURL");
 console.log("PASS");
 
-console.log("\n=== Test 3: Config hook injects provider ===");
+console.log("\n=== Test 3: Config hook — models registration ===");
 const fakeConfig = {};
 await hooks.config(fakeConfig);
 assert.ok(fakeConfig.provider, "Config should have provider after hook");
@@ -36,8 +35,12 @@ assert.ok(providerDef.options, "Provider should have options");
 assert.ok(providerDef.options.baseURL.endsWith("/v1"), "baseURL should end with /v1");
 assert.ok(providerDef.models, "Provider should have models");
 const modelKeys = Object.keys(providerDef.models);
-assert.ok(modelKeys.length > 0, "Should have at least 1 model");
-console.log(`PASS (${modelKeys.length} models registered)`);
+console.log(`Models registered: ${modelKeys.length}`);
+if (modelKeys.length === 0) {
+  console.log("PASS (0 models — 9Router unreachable, no fallback)");
+} else {
+  console.log(`PASS (${modelKeys.length} models — 9Router reachable, auto-discovered)`);
+}
 
 console.log("\n=== Test 4: Auth loader — baseURL handling ===");
 const loader = hooks.auth.loader;
@@ -70,19 +73,7 @@ assert.equal(
 );
 console.log("PASS");
 
-console.log("\n=== Test 6: Model formatting ===");
-const fallbackKeys = Object.keys(fakeConfig.provider["9router"].models);
-const krModel = fallbackKeys.find(k => k.startsWith("kr/"));
-if (krModel) {
-  const modelName = fakeConfig.provider["9router"].models[krModel].name;
-  assert.ok(!modelName.startsWith("kr/"), "Formatted name should not contain prefix");
-  assert.ok(modelName.includes("Kiro"), "Formatted name should include provider name");
-  console.log(`PASS (${krModel} → "${modelName}")`);
-} else {
-  console.log("SKIP (no kr/ model in fallback)");
-}
-
-console.log("\n=== Test 7: JSON serialization ===");
+console.log("\n=== Test 6: JSON serialization ===");
 try {
   const serialized = JSON.stringify(fakeConfig);
   JSON.parse(serialized);
