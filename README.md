@@ -8,7 +8,8 @@ Mendaftarkan 9Router sebagai custom provider di OpenCode dengan auto-discovery m
 
 ```json
 {
-  "plugin": ["@vheins/opencode-9router"]
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["@vheins/opencode-9router@latest"]
 }
 ```
 
@@ -21,10 +22,11 @@ Mendaftarkan 9Router sebagai custom provider di OpenCode dengan auto-discovery m
 ## Features
 
 - **Auto-discover models** — Models dari 9Router otomatis terdeteksi saat startup
-- **Configurable baseURL** — Atur Base URL langsung dari `/connect`, bukan dari opencode.json
+- **Configurable baseURL** — Atur Base URL via `/connect`, plugin options, atau environment variable
 - **Dynamic model list** — Semua model dari 9Router tersedia, termasuk combo kustom
 - **27+ fallback models** — Well-known models tersedia jika 9Router belum running
 - **OpenAI-compatible** — Menggunakan `@ai-sdk/openai-compatible`
+- **Type-safe** — Menggunakan `config` hook untuk registrasi provider yang sesuai dengan OpenCode config schema
 
 ## Installation
 
@@ -32,14 +34,18 @@ Mendaftarkan 9Router sebagai custom provider di OpenCode dengan auto-discovery m
 
 ```json
 {
-  "plugin": ["@vheins/opencode-9router"]
+  "$schema": "https://opencode.ai/config.json",
+  "plugin": ["@vheins/opencode-9router@latest"]
 }
 ```
+
+Tidak perlu mendefinisikan models atau provider secara manual — plugin mendaftarkan semuanya otomatis.
 
 ### Local file
 
 ```bash
 cp src/plugin.ts .opencode/plugins/9router-provider.ts
+cp src/constants.ts .opencode/plugins/constants.ts
 ```
 
 ## Usage
@@ -63,23 +69,24 @@ cp src/plugin.ts .opencode/plugins/9router-provider.ts
 
 ### Custom Base URL
 
-Jika 9Router berjalan di host/port berbeda, masukkan URL saat `/connect`:
+Jika 9Router berjalan di host/port berbeda, ada 3 cara konfigurasi:
 
-```
-Base URL: http://192.168.1.100:20128
-```
+#### Via `/connect` (recommended)
 
-Atau via plugin options:
+Masukkan URL custom saat diminta Base URL.
+
+#### Via plugin options
 
 ```json
 {
+  "$schema": "https://opencode.ai/config.json",
   "plugin": [
-    ["@vheins/opencode-9router", { "baseURL": "http://192.168.1.100:20128" }]
+    ["@vheins/opencode-9router@latest", { "baseURL": "http://192.168.1.100:20128" }]
   ]
 }
 ```
 
-Atau via environment variable:
+#### Via environment variable
 
 ```bash
 export ROUTER_BASE_URL=http://192.168.1.100:20128
@@ -106,14 +113,17 @@ export ROUTER_BASE_URL=http://192.168.1.100:20128
 ## How It Works
 
 ```
-opencode.json "plugin": ["@vheins/opencode-9router"]
+opencode.json "plugin": ["@vheins/opencode-9router@latest"]
   ↓
 Bun installs package from npm
   ↓
 Plugin loads at startup:
-  1. Try GET /v1/models from 9Router (3s timeout)
-  2. If OK → register live models
-  3. If fail → register 27 fallback models
+  1. Resolve baseURL (options > env > default)
+  2. Try GET /v1/models from 9Router (3s timeout)
+  3. If OK → register live models
+  4. If fail → register 27 fallback models
+  ↓
+config hook injects provider "9router" into OpenCode config
   ↓
 Provider "9router" appears in /models
   ↓
@@ -127,7 +137,14 @@ Auth loader overrides provider config with user's baseURL
 ```bash
 git clone https://github.com/vheins/opencode-9router
 cd opencode-9router
-bun install
+npm install
+npm run build
+```
+
+### Test
+
+```bash
+node test-minimal.mjs
 ```
 
 ### Publish
@@ -141,10 +158,10 @@ npm publish --access public
 
 ```
 opencode-9router/
-  index.ts            # Re-exports
   src/
     plugin.ts         # Main plugin logic
     constants.ts      # Models, defaults, prefixes
+  dist/               # Compiled output (generated)
   package.json        # npm package config
   tsconfig.json       # TypeScript config
   README.md           # This file
