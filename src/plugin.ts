@@ -20,17 +20,17 @@ function normalizeBaseURL(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
-function resolveBaseURL(options?: PluginOptions): string {
+function resolveBaseURL(options?: PluginOptions): { url: string; isDefault: boolean } {
   if (options?.baseURL && typeof options.baseURL === "string") {
-    return normalizeBaseURL(options.baseURL);
+    return { url: normalizeBaseURL(options.baseURL), isDefault: false };
   }
-  const envURL = (globalThis as Record<string, unknown>).process as 
+  const envURL = (globalThis as Record<string, unknown>).process as
     | { env?: Record<string, string> }
     | undefined;
   if (envURL?.env?.ROUTER_BASE_URL) {
-    return normalizeBaseURL(envURL.env.ROUTER_BASE_URL);
+    return { url: normalizeBaseURL(envURL.env.ROUTER_BASE_URL), isDefault: false };
   }
-  return DEFAULT_BASE_URL;
+  return { url: DEFAULT_BASE_URL, isDefault: true };
 }
 
 function ensureAPIPath(baseURL: string): string {
@@ -68,15 +68,26 @@ export const NineRouterPlugin: Plugin = async (
   { client }: PluginInput,
   options?: PluginOptions,
 ) => {
-  const configuredBaseURL = resolveBaseURL(options);
-  const discovered = await discoverModels(configuredBaseURL);
+  const { url: configuredBaseURL, isDefault } = resolveBaseURL(options);
 
-  if (!discovered && client?.app?.log) {
+  const discovered = isDefault ? null : await discoverModels(configuredBaseURL);
+
+  if (!discovered && !isDefault && client?.app?.log) {
     await client.app.log({
       body: {
         service: "9router-provider",
         level: "error",
         message: `9Router not reachable at ${configuredBaseURL}. Please check if 9Router is running and accessible.`,
+      },
+    });
+  }
+
+  if (isDefault && client?.app?.log) {
+    await client.app.log({
+      body: {
+        service: "9router-provider",
+        level: "info",
+        message: `9Router baseURL not configured. Set it via plugin options or ROUTER_BASE_URL env var to auto-discover models.`,
       },
     });
   }

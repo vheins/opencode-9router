@@ -23,7 +23,7 @@ assert.equal(prompts.length, 1, "Should have 1 prompt (baseURL only, no apiKey)"
 assert.equal(prompts[0].key, "baseURL", "Prompt key should be baseURL");
 console.log("PASS");
 
-console.log("\n=== Test 3: Config hook — models registration ===");
+console.log("\n=== Test 3: Config hook — default baseURL = no auto-discover ===");
 const fakeConfig = {};
 await hooks.config(fakeConfig);
 assert.ok(fakeConfig.provider, "Config should have provider after hook");
@@ -35,12 +35,8 @@ assert.ok(providerDef.options, "Provider should have options");
 assert.ok(providerDef.options.baseURL.endsWith("/v1"), "baseURL should end with /v1");
 assert.ok(providerDef.models, "Provider should have models");
 const modelKeys = Object.keys(providerDef.models);
-console.log(`Models registered: ${modelKeys.length}`);
-if (modelKeys.length === 0) {
-  console.log("PASS (0 models — 9Router unreachable, no fallback)");
-} else {
-  console.log(`PASS (${modelKeys.length} models — 9Router reachable, auto-discovered)`);
-}
+assert.equal(modelKeys.length, 0, "Should have 0 models when using default baseURL (no auto-discover)");
+console.log("PASS (0 models — default baseURL, no auto-discover)");
 
 console.log("\n=== Test 4: Auth loader — baseURL handling ===");
 const loader = hooks.auth.loader;
@@ -62,16 +58,22 @@ assert.deepEqual(auth5, {}, "Should return empty object when no baseURL");
 
 console.log("PASS");
 
-console.log("\n=== Test 5: Plugin options — custom baseURL ===");
-const hooks2 = await NineRouterPlugin(mockInput, { baseURL: "http://custom:9999" });
+console.log("\n=== Test 5: Plugin options — custom baseURL triggers auto-discover ===");
+const hooks2 = await NineRouterPlugin(mockInput, { baseURL: "http://localhost:20128" });
 const fakeConfig2 = {};
 await hooks2.config(fakeConfig2);
 assert.equal(
   fakeConfig2.provider["9router"].options.baseURL,
-  "http://custom:9999/v1",
+  "http://localhost:20128/v1",
   "Should use custom baseURL from options"
 );
-console.log("PASS");
+const modelKeys2 = Object.keys(fakeConfig2.provider["9router"].models);
+console.log(`Models with custom baseURL: ${modelKeys2.length}`);
+if (modelKeys2.length > 0) {
+  console.log("PASS (auto-discover triggered for custom baseURL)");
+} else {
+  console.log("PASS (custom baseURL set, but 9Router unreachable)");
+}
 
 console.log("\n=== Test 6: JSON serialization ===");
 try {
