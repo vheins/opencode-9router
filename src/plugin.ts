@@ -6,6 +6,9 @@ import {
   DEFAULT_API_PATH,
   KNOWN_PROVIDER_PREFIXES,
 } from "./constants.js";
+import * as fs from "node:fs";
+import * as path from "node:path";
+import * as os from "node:os";
 
 function formatModelName(modelId: string): string {
   for (const [prefix, provider] of Object.entries(KNOWN_PROVIDER_PREFIXES)) {
@@ -35,6 +38,27 @@ function resolveBaseURL(options?: PluginOptions): { url: string; isDefault: bool
 
 function ensureAPIPath(baseURL: string): string {
   return baseURL.endsWith(DEFAULT_API_PATH) ? baseURL : `${baseURL}${DEFAULT_API_PATH}`;
+}
+
+async function getAuthBaseURL(): Promise<string | null> {
+  try {
+    const authPath = path.join(os.homedir(), ".local", "share", "opencode", "auth.json");
+    const authContent = await fs.promises.readFile(authPath, "utf-8");
+    const auth = JSON.parse(authContent) as Record<string, any>;
+    
+    // Find 9Router auth entry
+    for (const key of Object.keys(auth)) {
+      if (key.toLowerCase().includes("9router")) {
+        const entry = auth[key];
+        if (entry?.baseURL && typeof entry.baseURL === "string") {
+          return normalizeBaseURL(entry.baseURL);
+        }
+      }
+    }
+  } catch {
+    // Auth file doesn't exist or can't be read
+  }
+  return null;
 }
 
 async function discoverModels(
@@ -70,24 +94,24 @@ export const NineRouterPlugin: Plugin = async (
 ) => {
   const { url: configuredBaseURL, isDefault } = resolveBaseURL(options);
 
-  let discovered = isDefault ? null : await discoverModels(configuredBaseURL);
+  // Try to get baseURL from auth file (set via opencode auth login)
+  const authBaseURL = await getAuthBaseURL();
+  const effectiveBaseURL = authBaseURL ?? configuredBaseURL;
 
-  if (!discovered && !isDefault && client?.app?.log) {
+  // Always try to discover models from effective baseURL
+  const discovered = await discoverModels(effectiveBaseURL);
+
+  if (!discovered && client?.app?.log) {
+    const level = authBaseURL ? "error" : "info";
+    const message = authBaseURL
+      ? `9Router not reachable at ${effectiveBaseURL}. Please check if 9Router is running and accessible.`
+      : `9Router baseURL not configured. Set it via plugin options, ROUTER_BASE_URL env var, or 'opencode auth login' to auto-discover models.`;
+    
     await client.app.log({
       body: {
         service: "9router-provider",
-        level: "error",
-        message: `9Router not reachable at ${configuredBaseURL}. Please check if 9Router is running and accessible.`,
-      },
-    });
-  }
-
-  if (isDefault && client?.app?.log) {
-    await client.app.log({
-      body: {
-        service: "9router-provider",
-        level: "info",
-        message: `9Router baseURL not configured. Set it via plugin options or ROUTER_BASE_URL env var to auto-discover models.`,
+        level,
+        message,
       },
     });
   }
@@ -99,7 +123,7 @@ export const NineRouterPlugin: Plugin = async (
         npm: "@ai-sdk/openai-compatible",
         name: PROVIDER_DISPLAY_NAME,
         options: {
-          baseURL: ensureAPIPath(configuredBaseURL),
+          baseURL: ensureAPIPath(effectiveBaseURL),
         },
         models: discovered ?? {},
       };
@@ -115,7 +139,6 @@ export const NineRouterPlugin: Plugin = async (
           // Re-discover models with user-provided baseURL
           const authDiscovered = await discoverModels(userURL);
           if (authDiscovered) {
-            discovered = authDiscovered;
             if (client?.app?.log) {
               await client.app.log({
                 body: {
