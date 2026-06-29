@@ -2,7 +2,7 @@
 
 OpenCode plugin provider for [9Router](https://github.com/decolua/9router) — FREE AI Router & Token Saver. 40+ providers, 100+ models.
 
-Mendaftarkan 9Router sebagai custom provider di OpenCode dengan auto-discovery models.
+Registers 9Router as a custom provider in OpenCode with auto-discovery of models.
 
 ## Quick Start
 
@@ -13,18 +13,18 @@ Mendaftarkan 9Router sebagai custom provider di OpenCode dengan auto-discovery m
 }
 ```
 
-1. Tambahkan plugin ke `opencode.json`
+1. Add the plugin to `opencode.json`
 2. Restart OpenCode
-3. `/models` → pilih model 9Router
+3. `/models` → select a 9Router model
 
-Plugin akan auto-discover models dari `http://localhost:20128` (default).
+The plugin will auto-discover models from `http://localhost:20128` (default).
 
 ## Features
 
-- **Auto-discover models** — Models dari 9Router otomatis terdeteksi saat startup
-- **Dynamic model list** — Semua model dari 9Router tersedia, termasuk combo kustom
-- **OpenAI-compatible** — Menggunakan `@ai-sdk/openai-compatible`
-- **Type-safe** — Menggunakan `config` hook untuk registrasi provider yang sesuai dengan OpenCode config schema
+- **Auto-discover models** — Models from 9Router are automatically detected on startup
+- **Dynamic model list** — All models from 9Router are available, including custom combos
+- **OpenAI-compatible** — Uses `@ai-sdk/openai-compatible`
+- **Type-safe** — Uses the `config` hook for provider registration that conforms to the OpenCode config schema
 
 ## Installation
 
@@ -37,11 +37,11 @@ Plugin akan auto-discover models dari `http://localhost:20128` (default).
 }
 ```
 
-Tidak perlu mendefinisikan provider secara manual — plugin mendaftarkannya otomatis.
+No need to define a provider manually — the plugin registers it automatically.
 
 ### Custom Base URL
 
-Jika 9Router berjalan di host/port berbeda, tambahkan provider config:
+If 9Router is running on a different host or port, add a provider config:
 
 ```json
 {
@@ -50,7 +50,7 @@ Jika 9Router berjalan di host/port berbeda, tambahkan provider config:
   "provider": {
     "9router": {
       "options": {
-        "baseURL": "https://model.idsolutions.id/v1"
+        "baseURL": "https://example.com/v1"
       }
     }
   }
@@ -66,7 +66,7 @@ Jika 9Router berjalan di host/port berbeda, tambahkan provider config:
   "provider": {
     "9router": {
       "options": {
-        "baseURL": "https://model.idsolutions.id/v1",
+        "baseURL": "https://example.com/v1",
         "apiKey": "your-api-key-here"
       }
     }
@@ -74,14 +74,14 @@ Jika 9Router berjalan di host/port berbeda, tambahkan provider config:
 }
 ```
 
-Atau pakai environment variable:
+Or using environment variables:
 
 ```json
 {
   "provider": {
     "9router": {
       "options": {
-        "baseURL": "https://model.idsolutions.id/v1",
+        "baseURL": "https://example.com/v1",
         "apiKey": "{env:ROUTER_API_KEY}"
       }
     }
@@ -96,11 +96,11 @@ opencode
 
 ## Usage
 
-### Select model
+### Select a model
 
 ```
 /models
-  → Find 9Router provider
+  → Find the 9Router provider
   → Pick any model (e.g., kr/claude-sonnet-4.5, cc/claude-opus-4-7)
 ```
 
@@ -127,7 +127,7 @@ opencode
 ```
 opencode.json "plugin": ["@vheins/opencode-9router@0.5.0"]
   ↓
-Bun installs package from npm
+Bun installs the package from npm
   ↓
 Plugin loads at startup:
   1. Read baseURL from provider config (or use default http://localhost:20128)
