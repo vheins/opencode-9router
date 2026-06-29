@@ -70,7 +70,7 @@ export const NineRouterPlugin: Plugin = async (
 ) => {
   const { url: configuredBaseURL, isDefault } = resolveBaseURL(options);
 
-  const discovered = isDefault ? null : await discoverModels(configuredBaseURL);
+  let discovered = isDefault ? null : await discoverModels(configuredBaseURL);
 
   if (!discovered && !isDefault && client?.app?.log) {
     await client.app.log({
@@ -110,7 +110,32 @@ export const NineRouterPlugin: Plugin = async (
         const auth = await getAuth();
         if (auth && typeof auth === "object" && "baseURL" in auth) {
           const userURL = normalizeBaseURL(String(auth.baseURL));
-          return { baseURL: ensureAPIPath(userURL) };
+          const apiURL = ensureAPIPath(userURL);
+          
+          // Re-discover models with user-provided baseURL
+          const authDiscovered = await discoverModels(userURL);
+          if (authDiscovered) {
+            discovered = authDiscovered;
+            if (client?.app?.log) {
+              await client.app.log({
+                body: {
+                  service: "9router-provider",
+                  level: "info",
+                  message: `Discovered ${Object.keys(authDiscovered).length} models from ${apiURL}`,
+                },
+              });
+            }
+          } else if (client?.app?.log) {
+            await client.app.log({
+              body: {
+                service: "9router-provider",
+                level: "error",
+                message: `Failed to discover models from ${apiURL}. Check if 9Router is running and accessible.`,
+              },
+            });
+          }
+          
+          return { baseURL: apiURL };
         }
         return {};
       },
