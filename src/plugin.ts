@@ -74,31 +74,73 @@ export const NineRouterPlugin: Plugin = async ({ client }: PluginInput) => {
 
   return {
     config: async (config) => {
-      const existingProvider = config.provider?.[PLUGIN_NAME];
-      const options = existingProvider?.options as Record<string, unknown> | undefined;
-      const baseURL = (options?.baseURL as string | undefined) ?? DEFAULT_BASE_URL;
-      const apiKey = options?.apiKey as string | undefined;
-
-      const normalizedURL = normalizeBaseURL(baseURL);
-      const apiURL = ensureAPIPath(normalizedURL);
-
-      const discovered = await discoverModels(normalizedURL, apiKey);
-      
       config.provider ??= {};
-      config.provider[PLUGIN_NAME] = {
-        npm: "@ai-sdk/openai-compatible",
-        name: PROVIDER_DISPLAY_NAME,
-        options: {
-          ...options,
-          baseURL: apiURL,
-        },
-        models: discovered ?? {},
-      };
+      const provider = config.provider;
 
-      if (discovered) {
-        await log("info", `Discovered ${Object.keys(discovered).length} models from ${apiURL}`);
-      } else {
-        await log("warn", `Failed to discover models from ${apiURL}. Check if 9Router is running and accessible.`);
+      // Collect all existing providers whose key starts with "9router"
+      const providerKeys = Object.keys(provider).filter((k) =>
+        k.startsWith("9router"),
+      );
+
+      // Backward compat: if no 9router-family providers exist, register the default one
+      if (providerKeys.length === 0) {
+        config.provider[PLUGIN_NAME] = {
+          npm: "@ai-sdk/openai-compatible",
+          name: PROVIDER_DISPLAY_NAME,
+          options: {
+            baseURL: DEFAULT_BASE_URL,
+          },
+          models: {},
+        };
+        providerKeys.push(PLUGIN_NAME);
+      }
+
+      // Process each 9router-family provider independently
+      const results = await Promise.allSettled(
+        providerKeys.map(async (key) => {
+          const existing = provider[key];
+          const options = existing?.options as Record<string, unknown> | undefined;
+          const baseURL = (options?.baseURL as string) ?? DEFAULT_BASE_URL;
+          const apiKey = options?.apiKey as string | undefined;
+          const existingName = existing?.name as string | undefined;
+
+          const normalizedURL = normalizeBaseURL(baseURL);
+          const apiURL = ensureAPIPath(normalizedURL);
+
+          const discovered = await discoverModels(normalizedURL, apiKey);
+
+          provider[key] = {
+            npm: existing?.npm ?? "@ai-sdk/openai-compatible",
+            name: existingName ?? key,
+            options: {
+              ...(existing?.options as Record<string, unknown>),
+              baseURL: apiURL,
+            },
+            models: discovered ?? {},
+          };
+
+          return { key, discovered, apiURL };
+        }),
+      );
+
+      // Log results
+      for (const result of results) {
+        if (result.status === "fulfilled") {
+          const { key, discovered, apiURL } = result.value;
+          if (discovered) {
+            await log(
+              "info",
+              `[${key}] Discovered ${Object.keys(discovered).length} models from ${apiURL}`,
+            );
+          } else {
+            await log(
+              "warn",
+              `[${key}] Failed to discover models from ${apiURL}. Check if the service is running and accessible.`,
+            );
+          }
+        } else {
+          await log("error", `Provider pipeline error: ${result.reason}`);
+        }
       }
     },
   } satisfies Hooks;
