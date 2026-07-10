@@ -25,6 +25,12 @@ const modelKeys1 = Object.keys(fakeConfig1.provider["9router"].models);
 console.log(`Models with default baseURL: ${modelKeys1.length}`);
 if (modelKeys1.length > 0) {
   console.log("PASS (auto-discovered models from localhost)");
+  // Check capability fields on first discovered model
+  const firstModel = Object.values(fakeConfig1.provider["9router"].models)[0];
+  const capKeys = Object.keys(firstModel).filter(k => k !== "name").sort();
+  console.log(`Capability fields on first model: ${capKeys.join(", ") || "(none beyond name)"}`);
+  // tool_call should always be present
+  assert.equal(firstModel.tool_call, true, "tool_call should default to true");
 } else {
   console.log("PASS (no models — 9Router unreachable)");
 }
@@ -57,6 +63,9 @@ const modelKeys2 = Object.keys(fakeConfig2.provider["9router"].models);
 console.log(`Models discovered: ${modelKeys2.length}`);
 if (modelKeys2.length > 0) {
   console.log("PASS (auto-discovered models from custom baseURL)");
+  const firstModel2 = Object.values(fakeConfig2.provider["9router"].models)[0];
+  const capKeys2 = Object.keys(firstModel2).filter(k => k !== "name").sort();
+  console.log(`Capability fields on first model (apiKey): ${capKeys2.join(", ") || "(none beyond name)"}`);
 } else {
   console.log("PASS (no models — 9Router unreachable)");
 }

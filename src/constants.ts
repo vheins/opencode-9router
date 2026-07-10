@@ -58,6 +58,18 @@ export const FALLBACK_MODELS: Record<string, { name: string }> = {
   "groq/llama-4.5-70b": { name: "Llama 4.5 70B (Groq)" },
 };
 
+/** URL for the models.dev capability catalog. */
+export const MODELS_DEV_URL = "https://models.dev/api.json";
+
+/** Cache TTL for the models.dev catalog (5 minutes). */
+export const MODELS_DEV_CACHE_TTL = 5 * 60 * 1000;
+
+/** Timeout per-model info request (3 seconds). */
+export const MODEL_INFO_TIMEOUT = 3000;
+
+/** Max concurrent per-model info requests. */
+export const MAX_CONCURRENT_INFO = 5;
+
 /** Known provider prefixes in 9Router model IDs for human-readable naming. */
 export const KNOWN_PROVIDER_PREFIXES: Record<string, string> = {
   "cc/": "Claude Code",

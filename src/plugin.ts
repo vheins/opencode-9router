@@ -1,11 +1,50 @@
 import type { Hooks, Plugin, PluginInput } from "@opencode-ai/plugin";
 import {
+  DEFAULT_API_PATH,
+  DEFAULT_BASE_URL,
+  KNOWN_PROVIDER_PREFIXES,
+  MAX_CONCURRENT_INFO,
+  MODEL_INFO_TIMEOUT,
+  MODELS_DEV_CACHE_TTL,
+  MODELS_DEV_URL,
   PLUGIN_NAME,
   PROVIDER_DISPLAY_NAME,
-  DEFAULT_BASE_URL,
-  DEFAULT_API_PATH,
-  KNOWN_PROVIDER_PREFIXES,
 } from "./constants.js";
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+
+// ── Types ──────────────────────────────────────────────────
+
+type ModelConfig = {
+  name: string;
+  attachment?: boolean;
+  reasoning?: boolean;
+  temperature?: boolean;
+  tool_call?: boolean;
+  modalities?: {
+    input: Array<"text" | "audio" | "image" | "video" | "pdf">;
+    output: Array<"text" | "audio" | "image" | "video" | "pdf">;
+  };
+  interleaved?: true | { field: "reasoning" | "reasoning_content" | "reasoning_details" };
+};
+
+interface RouterModelInfo {
+  id: string;
+  capabilities?: {
+    vision?: boolean;
+    audioInput?: boolean;
+    tools?: boolean;
+    reasoning?: boolean;
+    search?: boolean;
+  };
+}
+
+interface ModelsDevEntry {
+  id: string;
+  capabilities?: RouterModelInfo["capabilities"];
+  [key: string]: unknown;
+}
+
+// ── Utility Functions ──────────────────────────────────────
 
 function formatModelName(modelId: string): string {
   for (const [prefix, provider] of Object.entries(KNOWN_PROVIDER_PREFIXES)) {
@@ -24,10 +63,191 @@ function ensureAPIPath(baseURL: string): string {
   return baseURL.endsWith(DEFAULT_API_PATH) ? baseURL : `${baseURL}${DEFAULT_API_PATH}`;
 }
 
+// ── Capability Resolution ──────────────────────────────────
+
+async function fetchModelInfo(
+  apiURL: string,
+  modelId: string,
+  apiKey?: string,
+): Promise<RouterModelInfo | null> {
+  try {
+    const headers: Record<string, string> = {};
+    if (apiKey) {
+      headers["Authorization"] = `Bearer ${apiKey}`;
+    }
+    const response = await fetch(
+      `${apiURL}/models/info?id=${encodeURIComponent(modelId)}`,
+      {
+        signal: AbortSignal.timeout(MODEL_INFO_TIMEOUT),
+        headers,
+      },
+    );
+    if (!response.ok) return null;
+    return (await response.json()) as RouterModelInfo;
+  } catch {
+    return null;
+  }
+}
+
+function mapRouterCapabilities(info: RouterModelInfo): Partial<ModelConfig> {
+  const config: Partial<ModelConfig> = {};
+  const inputModalities: Set<"text" | "audio" | "image" | "video" | "pdf"> = new Set(["text"]);
+
+  if (info.capabilities) {
+    if (info.capabilities.vision) {
+      config.attachment = true;
+      inputModalities.add("image");
+    }
+    if (info.capabilities.tools) {
+      config.tool_call = true;
+    }
+    if (info.capabilities.reasoning) {
+      config.reasoning = true;
+    }
+    if (info.capabilities.audioInput) {
+      inputModalities.add("audio");
+    }
+  }
+
+  if (inputModalities.size > 1) {
+    config.modalities = { input: Array.from(inputModalities), output: ["text"] };
+  }
+
+  return config;
+}
+
+async function fetchModelsDevCatalog(): Promise<ModelsDevEntry[] | null> {
+  const cacheDir = `${process.env.HOME}/.cache/opencode-9router`;
+  const cacheFile = `${cacheDir}/models-dev.json`;
+  const url = process.env.OPENCODE_MODELS_URL || MODELS_DEV_URL;
+
+  // Try cache (respect TTL via file mtime)
+  try {
+    if (existsSync(cacheFile)) {
+      const stat = statSync(cacheFile);
+      if (Date.now() - stat.mtimeMs < MODELS_DEV_CACHE_TTL) {
+        const content = readFileSync(cacheFile, "utf-8");
+        return JSON.parse(content) as ModelsDevEntry[];
+      }
+    }
+  } catch {
+    // Cache miss or invalid — continue to fetch
+  }
+
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!response.ok) return null;
+    const data = (await response.json()) as ModelsDevEntry[];
+
+    // Best-effort cache write
+    try {
+      mkdirSync(cacheDir, { recursive: true });
+      writeFileSync(cacheFile, JSON.stringify(data), "utf-8");
+    } catch {
+      // Cache write is optional
+    }
+
+    return data;
+  } catch {
+    return null;
+  }
+}
+
+function findModelsDevMatch(
+  modelId: string,
+  catalog: ModelsDevEntry[],
+): RouterModelInfo | null {
+  // Known prefixes to strip from model IDs before matching
+  const stripPrefixes = [
+    ...Object.keys(KNOWN_PROVIDER_PREFIXES),
+    "nvidia/",
+    "cmc/",
+    "azure/",
+    "aws/",
+    "gcp/",
+  ];
+
+  let stripped = modelId;
+  for (const prefix of stripPrefixes) {
+    if (modelId.startsWith(prefix)) {
+      stripped = modelId.slice(prefix.length);
+      break;
+    }
+  }
+
+  const normalized = stripped.toLowerCase().replace(/\./g, "-");
+
+  let bestMatch: ModelsDevEntry | null = null;
+
+  for (const entry of catalog) {
+    const catalogId = typeof entry.id === "string"
+      ? entry.id.toLowerCase().replace(/\./g, "-")
+      : "";
+    if (catalogId.endsWith(normalized)) {
+      bestMatch = entry;
+      break;
+    }
+    if (catalogId.includes(normalized) && !bestMatch) {
+      bestMatch = entry;
+    }
+  }
+
+  if (bestMatch) {
+    return {
+      id: bestMatch.id,
+      capabilities: bestMatch.capabilities,
+    };
+  }
+
+  return null;
+}
+
+async function resolveCapabilitiesBatch(
+  modelIds: string[],
+  apiURL: string,
+  apiKey?: string,
+): Promise<Record<string, Partial<ModelConfig>>> {
+  // Start catalog fetch in parallel with per-model requests
+  const catalogPromise = fetchModelsDevCatalog();
+  const capabilities: Record<string, Partial<ModelConfig>> = {};
+
+  // Try per-model API in batches of MAX_CONCURRENT_INFO
+  for (let i = 0; i < modelIds.length; i += MAX_CONCURRENT_INFO) {
+    const batch = modelIds.slice(i, i + MAX_CONCURRENT_INFO);
+    const results = await Promise.allSettled(
+      batch.map((id) => fetchModelInfo(apiURL, id, apiKey)),
+    );
+
+    for (let j = 0; j < batch.length; j++) {
+      const result = results[j];
+      if (result.status === "fulfilled" && result.value) {
+        capabilities[batch[j]] = mapRouterCapabilities(result.value);
+      }
+    }
+  }
+
+  // Fallback: models.dev catalog for models without API capabilities
+  const catalog = await catalogPromise;
+  if (catalog) {
+    for (const modelId of modelIds) {
+      if (!capabilities[modelId]) {
+        const match = findModelsDevMatch(modelId, catalog);
+        if (match) {
+          capabilities[modelId] = mapRouterCapabilities(match);
+        }
+      }
+    }
+  }
+
+  return capabilities;
+}
+
+// ── Model Discovery ─────────────────────────────────────────
+
 async function discoverModels(
   baseURL: string,
   apiKey?: string,
-): Promise<Record<string, { name: string }> | null> {
+): Promise<Record<string, ModelConfig> | null> {
   const apiURL = ensureAPIPath(baseURL);
   try {
     const headers: Record<string, string> = {};
@@ -47,15 +267,33 @@ async function discoverModels(
       return null;
     }
 
-    const models: Record<string, { name: string }> = {};
+    const models: Record<string, ModelConfig> = {};
+    const modelIds: string[] = [];
     for (const model of data.data) {
       models[model.id] = { name: formatModelName(model.id) };
+      modelIds.push(model.id);
     }
+
+    // Enrich with capabilities from per-model API and/or models.dev catalog
+    const capabilities = await resolveCapabilitiesBatch(modelIds, apiURL, apiKey);
+    for (const [id, caps] of Object.entries(capabilities)) {
+      if (models[id]) {
+        Object.assign(models[id], caps);
+      }
+    }
+
+    // Default: tool_call is true for API-discovered models (like opencode does)
+    for (const config of Object.values(models)) {
+      config.tool_call = config.tool_call ?? true;
+    }
+
     return models;
   } catch {
     return null;
   }
 }
+
+// ── Plugin ──────────────────────────────────────────────────
 
 export const NineRouterPlugin: Plugin = async ({ client }: PluginInput) => {
   const log = async (level: "info" | "warn" | "error" | "debug", message: string) => {
