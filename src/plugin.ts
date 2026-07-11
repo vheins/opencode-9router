@@ -329,11 +329,11 @@ async function discoverModels(
   if (cacheEnabled) {
     const cached = readDiscoveryCache(baseURL, cacheTTL);
     if (cached) {
-      log("debug", `[discovery] Cache HIT for ${baseURL} (${Object.keys(cached).length} models)`);
+      log("info", `[discovery] Cache HIT for ${baseURL} (${Object.keys(cached).length} models)`);
       return cached;
     }
   }
-  log("debug", `[discovery] Cache MISS for ${baseURL}, fetching with ${discoveryTimeout}ms timeout`);
+  log("info", `[discovery] Cache MISS for ${baseURL}, fetching with ${discoveryTimeout}ms timeout`);
 
   const apiURL = ensureAPIPath(baseURL);
   try {
@@ -341,13 +341,13 @@ async function discoverModels(
     if (apiKey) {
       headers["Authorization"] = `Bearer ${apiKey}`;
     }
-    log("debug", `[discovery] Fetching ${apiURL}/models with ${discoveryTimeout}ms timeout`);
+    log("info", `[discovery] Fetching ${apiURL}/models with ${discoveryTimeout}ms timeout`);
     const response = await fetch(`${apiURL}/models`, {
       signal: AbortSignal.timeout(discoveryTimeout),
       headers,
     });
     if (!response.ok) return null;
-    log("debug", `[discovery] Fetch OK (${response.status}) for ${baseURL}`);
+    log("info", `[discovery] Fetch OK (${response.status}) for ${baseURL}`);
 
     const data = (await response.json()) as {
       data?: Array<{ id: string }>;
@@ -379,20 +379,20 @@ async function discoverModels(
     // ── Cache write on success ──
     if (cacheEnabled) {
       writeDiscoveryCache(baseURL, models);
-      log("debug", `[discovery] Cached ${Object.keys(models).length} models for ${baseURL}`);
+      log("info", `[discovery] Cached ${Object.keys(models).length} models for ${baseURL}`);
     }
 
     return models;
   } catch {
     // ── Stale cache fallback: return expired cache if fetch failed ──
-    log("debug", `[discovery] Fetch failed for ${baseURL}, trying stale cache fallback`);
+    log("info", `[discovery] Fetch failed for ${baseURL}, trying stale cache fallback`);
     if (cacheEnabled) {
       const stale = readStaleDiscoveryCache(baseURL);
       if (stale) {
-        log("debug", `[discovery] Stale cache fallback for ${baseURL} (${Object.keys(stale).length} models)`);
+        log("info", `[discovery] Stale cache fallback for ${baseURL} (${Object.keys(stale).length} models)`);
         return stale;
       }
-      log("debug", `[discovery] No stale cache for ${baseURL}, returning null`);
+      log("info", `[discovery] No stale cache for ${baseURL}, returning null`);
     }
 
     return null;
