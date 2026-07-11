@@ -42,25 +42,9 @@ The plugin will auto-discover models from `http://localhost:20128` (default).
 
 No need to define a provider manually — the plugin registers it automatically.
 
-### Custom Base URL
+### Multiple Providers
 
-If 9Router is running on a different host or port, add a provider config:
-
-```json
-{
-  "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@vheins/opencode-9router@latest"],
-  "provider": {
-    "9router": {
-      "options": {
-        "baseURL": "https://example.com/v1"
-      }
-    }
-  }
-}
-```
-
-### With API Key
+Add one or more 9Router-family providers with custom `baseURL` and `apiKey`:
 
 ```json
 {
@@ -68,21 +52,35 @@ If 9Router is running on a different host or port, add a provider config:
   "plugin": ["@vheins/opencode-9router@latest"],
   "provider": {
     "9router": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "ID Solutions",
       "options": {
-        "baseURL": "https://example.com/v1",
-        "apiKey": "your-api-key-here"
+        "baseURL": "https://model.idsolutions.id/v1",
+        "apiKey": "sk-70c801f54ddaab6e-pbot5n-2002c5b3"
+      }
+    },
+    "9router-local": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Local Router",
+      "options": {
+        "baseURL": "http://127.0.0.1:20128/v1",
+        "apiKey": "sk-..."
       }
     }
   }
 }
 ```
 
-Or using environment variables:
+Each provider key must start with `9router`. The `npm` must be `@ai-sdk/openai-compatible`. The `name` is a display label shown in OpenCode.
+
+### With Environment Variable
 
 ```json
 {
   "provider": {
     "9router": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Remote 9Router",
       "options": {
         "baseURL": "https://example.com/v1",
         "apiKey": "{env:ROUTER_API_KEY}"
@@ -113,6 +111,8 @@ opencode
 {
   "provider": {
     "9router": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Local Router",
       "options": {
         "baseURL": "http://localhost:20128",
         "cache": true,
@@ -120,6 +120,8 @@ opencode
       }
     },
     "9router-remote": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Remote API",
       "options": {
         "baseURL": "https://model.idsolutions.id/v1",
         "apiKey": "sk-...",
@@ -136,6 +138,8 @@ opencode
 {
   "provider": {
     "9router": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "Local Router",
       "options": {
         "baseURL": "http://localhost:20128",
         "cache": false
