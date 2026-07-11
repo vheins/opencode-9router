@@ -67,6 +67,9 @@ export const MODELS_DEV_CACHE_TTL = 5 * 60 * 1000;
 /** Default cache TTL for model discovery results (3 hours). */
 export const DISCOVERY_CACHE_TTL = 3 * 60 * 60 * 1000;
 
+/** Timeout for model list discovery request (30 seconds). */
+export const DISCOVERY_TIMEOUT = 30000;
+
 /** Timeout per-model info request (3 seconds). */
 export const MODEL_INFO_TIMEOUT = 3000;
 

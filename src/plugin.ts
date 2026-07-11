@@ -3,6 +3,7 @@ import {
   DEFAULT_API_PATH,
   DEFAULT_BASE_URL,
   DISCOVERY_CACHE_TTL,
+  DISCOVERY_TIMEOUT,
   KNOWN_PROVIDER_PREFIXES,
   MAX_CONCURRENT_INFO,
   MODEL_INFO_TIMEOUT,
@@ -321,6 +322,7 @@ async function discoverModels(
   apiKey?: string,
   cacheEnabled = true,
   cacheTTL = DISCOVERY_CACHE_TTL,
+  discoveryTimeout = DISCOVERY_TIMEOUT,
 ): Promise<Record<string, ModelConfig> | null> {
   // ── Cache hit: return fresh cached models ──
   if (cacheEnabled) {
@@ -337,7 +339,7 @@ async function discoverModels(
       headers["Authorization"] = `Bearer ${apiKey}`;
     }
     const response = await fetch(`${apiURL}/models`, {
-      signal: AbortSignal.timeout(3000),
+      signal: AbortSignal.timeout(discoveryTimeout),
       headers,
     });
     if (!response.ok) return null;
@@ -443,8 +445,9 @@ export const NineRouterPlugin: Plugin = async ({ client }: PluginInput) => {
           // Per-provider cache configuration
           const cacheEnabled = (options?.cache as boolean) ?? true;
           const cacheTTL = (options?.cacheTTL as number) ?? DISCOVERY_CACHE_TTL;
+          const discoveryTimeout = (options?.discoveryTimeout as number) ?? DISCOVERY_TIMEOUT;
 
-          const discovered = await discoverModels(normalizedURL, apiKey, cacheEnabled, cacheTTL);
+          const discovered = await discoverModels(normalizedURL, apiKey, cacheEnabled, cacheTTL, discoveryTimeout);
 
           provider[key] = {
             npm: existing?.npm ?? "@ai-sdk/openai-compatible",
