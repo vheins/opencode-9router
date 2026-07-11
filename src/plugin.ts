@@ -319,18 +319,21 @@ async function resolveCapabilitiesBatch(
 
 async function discoverModels(
   baseURL: string,
-  apiKey?: string,
-  cacheEnabled = true,
-  cacheTTL = DISCOVERY_CACHE_TTL,
-  discoveryTimeout = DISCOVERY_TIMEOUT,
+  apiKey: string | undefined,
+  cacheEnabled: boolean,
+  cacheTTL: number,
+  discoveryTimeout: number,
+  log: (level: "info" | "warn" | "error" | "debug", message: string) => Promise<void>,
 ): Promise<Record<string, ModelConfig> | null> {
   // ── Cache hit: return fresh cached models ──
   if (cacheEnabled) {
     const cached = readDiscoveryCache(baseURL, cacheTTL);
     if (cached) {
+      log("debug", `[discovery] Cache HIT for ${baseURL} (${Object.keys(cached).length} models)`);
       return cached;
     }
   }
+  log("debug", `[discovery] Cache MISS for ${baseURL}, fetching with ${discoveryTimeout}ms timeout`);
 
   const apiURL = ensureAPIPath(baseURL);
   try {
@@ -338,11 +341,13 @@ async function discoverModels(
     if (apiKey) {
       headers["Authorization"] = `Bearer ${apiKey}`;
     }
+    log("debug", `[discovery] Fetching ${apiURL}/models with ${discoveryTimeout}ms timeout`);
     const response = await fetch(`${apiURL}/models`, {
       signal: AbortSignal.timeout(discoveryTimeout),
       headers,
     });
     if (!response.ok) return null;
+    log("debug", `[discovery] Fetch OK (${response.status}) for ${baseURL}`);
 
     const data = (await response.json()) as {
       data?: Array<{ id: string }>;
@@ -374,16 +379,20 @@ async function discoverModels(
     // ── Cache write on success ──
     if (cacheEnabled) {
       writeDiscoveryCache(baseURL, models);
+      log("debug", `[discovery] Cached ${Object.keys(models).length} models for ${baseURL}`);
     }
 
     return models;
   } catch {
     // ── Stale cache fallback: return expired cache if fetch failed ──
+    log("debug", `[discovery] Fetch failed for ${baseURL}, trying stale cache fallback`);
     if (cacheEnabled) {
       const stale = readStaleDiscoveryCache(baseURL);
       if (stale) {
+        log("debug", `[discovery] Stale cache fallback for ${baseURL} (${Object.keys(stale).length} models)`);
         return stale;
       }
+      log("debug", `[discovery] No stale cache for ${baseURL}, returning null`);
     }
 
     return null;
@@ -447,7 +456,7 @@ export const NineRouterPlugin: Plugin = async ({ client }: PluginInput) => {
           const cacheTTL = (options?.cacheTTL as number) ?? DISCOVERY_CACHE_TTL;
           const discoveryTimeout = (options?.discoveryTimeout as number) ?? DISCOVERY_TIMEOUT;
 
-          const discovered = await discoverModels(normalizedURL, apiKey, cacheEnabled, cacheTTL, discoveryTimeout);
+          const discovered = await discoverModels(normalizedURL, apiKey, cacheEnabled, cacheTTL, discoveryTimeout, log);
 
           provider[key] = {
             npm: existing?.npm ?? "@ai-sdk/openai-compatible",
