@@ -44,7 +44,7 @@ No need to define a provider manually — the plugin registers it automatically.
 
 ### Multiple Providers
 
-Add one or more 9Router-family providers with custom `baseURL` and `apiKey`:
+Add one or more 9Router-family providers with custom options:
 
 ```json
 {
@@ -56,7 +56,10 @@ Add one or more 9Router-family providers with custom `baseURL` and `apiKey`:
       "name": "ID Solutions",
       "options": {
         "baseURL": "https://model.idsolutions.id/v1",
-        "apiKey": "sk-70c801f54ddaab6e-pbot5n-2002c5b3"
+        "apiKey": "sk-70c801f54ddaab6e-pbot5n-2002c5b3",
+        "cache": true,
+        "cacheTTL": 10800000,
+        "discoveryTimeout": 60000
       }
     },
     "9router-local": {
@@ -64,7 +67,9 @@ Add one or more 9Router-family providers with custom `baseURL` and `apiKey`:
       "name": "Local Router",
       "options": {
         "baseURL": "http://127.0.0.1:20128/v1",
-        "apiKey": "sk-..."
+        "apiKey": "sk-...",
+        "cache": true,
+        "discoveryTimeout": 60000
       }
     }
   }
@@ -83,7 +88,9 @@ Each provider key must start with `9router`. The `npm` must be `@ai-sdk/openai-c
       "name": "Remote 9Router",
       "options": {
         "baseURL": "https://example.com/v1",
-        "apiKey": "{env:ROUTER_API_KEY}"
+        "apiKey": "{env:ROUTER_API_KEY}",
+        "cache": true,
+        "discoveryTimeout": 30000
       }
     }
   }
@@ -142,7 +149,9 @@ opencode
       "name": "Local Router",
       "options": {
         "baseURL": "http://localhost:20128",
-        "cache": false
+        "apiKey": "sk-...",
+        "cache": false,
+        "discoveryTimeout": 30000
       }
     }
   }

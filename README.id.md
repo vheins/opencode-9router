@@ -44,7 +44,7 @@ Tidak perlu mendefinisikan provider secara manual — plugin mendaftarkannya sec
 
 ### Multi Provider
 
-Tambahkan satu atau lebih provider 9Router dengan `baseURL` dan `apiKey` kustom:
+Tambahkan satu atau lebih provider 9Router dengan opsi kustom:
 
 ```json
 {
@@ -56,7 +56,10 @@ Tambahkan satu atau lebih provider 9Router dengan `baseURL` dan `apiKey` kustom:
       "name": "ID Solutions",
       "options": {
         "baseURL": "https://model.idsolutions.id/v1",
-        "apiKey": "sk-70c801f54ddaab6e-pbot5n-2002c5b3"
+        "apiKey": "sk-70c801f54ddaab6e-pbot5n-2002c5b3",
+        "cache": true,
+        "cacheTTL": 10800000,
+        "discoveryTimeout": 60000
       }
     },
     "9router-local": {
@@ -64,7 +67,9 @@ Tambahkan satu atau lebih provider 9Router dengan `baseURL` dan `apiKey` kustom:
       "name": "Local Router",
       "options": {
         "baseURL": "http://127.0.0.1:20128/v1",
-        "apiKey": "sk-..."
+        "apiKey": "sk-...",
+        "cache": true,
+        "discoveryTimeout": 60000
       }
     }
   }
@@ -83,7 +88,9 @@ Setiap key provider harus diawali `9router`. `npm` harus `@ai-sdk/openai-compati
       "name": "Remote 9Router",
       "options": {
         "baseURL": "https://example.com/v1",
-        "apiKey": "{env:ROUTER_API_KEY}"
+        "apiKey": "{env:ROUTER_API_KEY}",
+        "cache": true,
+        "discoveryTimeout": 30000
       }
     }
   }
@@ -142,7 +149,9 @@ opencode
       "name": "Local Router",
       "options": {
         "baseURL": "http://localhost:20128",
-        "cache": false
+        "apiKey": "sk-...",
+        "cache": false,
+        "discoveryTimeout": 30000
       }
     }
   }
