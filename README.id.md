@@ -9,7 +9,7 @@ Mendaftarkan 9Router sebagai custom provider di OpenCode dengan auto-discovery m
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@vheins/opencode-9router@0.5.0"]
+  "plugin": ["@vheins/opencode-9router@0.6.0"]
 }
 ```
 
@@ -33,7 +33,7 @@ Plugin akan otomatis mendeteksi model dari `http://localhost:20128` (default).
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@vheins/opencode-9router@0.5.0"]
+  "plugin": ["@vheins/opencode-9router@0.6.0"]
 }
 ```
 
@@ -46,7 +46,7 @@ Jika 9Router berjalan di host atau port yang berbeda, tambahkan konfigurasi prov
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@vheins/opencode-9router@0.5.0"],
+  "plugin": ["@vheins/opencode-9router@0.6.0"],
   "provider": {
     "9router": {
       "options": {
@@ -59,10 +59,12 @@ Jika 9Router berjalan di host atau port yang berbeda, tambahkan konfigurasi prov
 
 ### Dengan API Key
 
+> **Membutuhkan v0.6.0+** — Versi sebelumnya tidak mengirimkan API key saat penemuan model, yang menyebabkan error 401 jika instansi 9Router Anda memerlukan autentikasi.
+
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@vheins/opencode-9router@0.5.0"],
+  "plugin": ["@vheins/opencode-9router@0.6.0"],
   "provider": {
     "9router": {
       "options": {
@@ -125,13 +127,13 @@ opencode
 ## Cara Kerja
 
 ```
-opencode.json "plugin": ["@vheins/opencode-9router@0.5.0"]
+opencode.json "plugin": ["@vheins/opencode-9router@0.6.0"]
   ↓
 Bun menginstal paket dari npm
   ↓
 Plugin dimuat saat startup:
-  1. Baca baseURL dari konfigurasi provider (atau gunakan default http://localhost:20128)
-  2. Coba GET /v1/models dari baseURL (timeout 3 detik)
+  1. Baca baseURL dan apiKey dari konfigurasi provider (atau gunakan default)
+  2. Coba GET /v1/models dari baseURL (timeout 3 detik, dengan header auth jika apiKey tersedia)
   3. Jika berhasil → daftarkan model langsung
   4. Jika gagal → log peringatan, tidak ada model yang didaftarkan
   ↓

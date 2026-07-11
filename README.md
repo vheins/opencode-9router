@@ -9,7 +9,7 @@ Registers 9Router as a custom provider in OpenCode with auto-discovery of models
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@vheins/opencode-9router@0.5.0"]
+  "plugin": ["@vheins/opencode-9router@0.6.0"]
 }
 ```
 
@@ -33,7 +33,7 @@ The plugin will auto-discover models from `http://localhost:20128` (default).
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@vheins/opencode-9router@0.5.0"]
+  "plugin": ["@vheins/opencode-9router@0.6.0"]
 }
 ```
 
@@ -46,7 +46,7 @@ If 9Router is running on a different host or port, add a provider config:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@vheins/opencode-9router@0.5.0"],
+  "plugin": ["@vheins/opencode-9router@0.6.0"],
   "provider": {
     "9router": {
       "options": {
@@ -59,10 +59,12 @@ If 9Router is running on a different host or port, add a provider config:
 
 ### With API Key
 
+> **Requires v0.6.0+** — Earlier versions do not pass the API key during model discovery, which causes 401 errors if your 9Router instance requires authentication.
+
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@vheins/opencode-9router@0.5.0"],
+  "plugin": ["@vheins/opencode-9router@0.6.0"],
   "provider": {
     "9router": {
       "options": {
@@ -125,13 +127,13 @@ opencode
 ## How It Works
 
 ```
-opencode.json "plugin": ["@vheins/opencode-9router@0.5.0"]
+opencode.json "plugin": ["@vheins/opencode-9router@0.6.0"]
   ↓
 Bun installs the package from npm
   ↓
 Plugin loads at startup:
-  1. Read baseURL from provider config (or use default http://localhost:20128)
-  2. Try GET /v1/models from baseURL (3s timeout)
+  1. Read baseURL and apiKey from provider config (or use defaults)
+  2. Try GET /v1/models from baseURL (3s timeout, with auth header if apiKey provided)
   3. If OK → register live models
   4. If fail → log warning, no models registered
   ↓
