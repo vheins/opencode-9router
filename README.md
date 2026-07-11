@@ -9,7 +9,7 @@ Registers 9Router as a custom provider in OpenCode with auto-discovery of models
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@vheins/opencode-9router@0.5.0"]
+  "plugin": ["@vheins/opencode-9router@latest"]
 }
 ```
 
@@ -22,6 +22,9 @@ The plugin will auto-discover models from `http://localhost:20128` (default).
 ## Features
 
 - **Auto-discover models** — Models from 9Router are automatically detected on startup
+- **Smart caching** — Discovery results cached for 3 hours (configurable) for instant subsequent loads
+- **Stale fallback** — If the backend is unreachable, returns cached models instead of failing
+- **Configurable timeout** — Adjustable discovery timeout (default 30s) for slow backends
 - **Dynamic model list** — All models from 9Router are available, including custom combos
 - **OpenAI-compatible** — Uses `@ai-sdk/openai-compatible`
 - **Type-safe** — Uses the `config` hook for provider registration that conforms to the OpenCode config schema
@@ -33,7 +36,7 @@ The plugin will auto-discover models from `http://localhost:20128` (default).
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@vheins/opencode-9router@0.5.0"]
+  "plugin": ["@vheins/opencode-9router@latest"]
 }
 ```
 
@@ -46,7 +49,7 @@ If 9Router is running on a different host or port, add a provider config:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@vheins/opencode-9router@0.5.0"],
+  "plugin": ["@vheins/opencode-9router@latest"],
   "provider": {
     "9router": {
       "options": {
@@ -62,7 +65,7 @@ If 9Router is running on a different host or port, add a provider config:
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@vheins/opencode-9router@0.5.0"],
+  "plugin": ["@vheins/opencode-9router@latest"],
   "provider": {
     "9router": {
       "options": {
@@ -92,6 +95,54 @@ Or using environment variables:
 ```bash
 export ROUTER_API_KEY=your-api-key-here
 opencode
+```
+
+## Provider Options
+
+| Option                | Type      | Default     | Description                                            |
+| --------------------- | --------- | ----------- | ------------------------------------------------------ |
+| `baseURL`               | `string`    | `http://localhost:20128` | 9Router API endpoint                                   |
+| `apiKey`                | `string`    | —           | API key (if required by backend)                       |
+| `cache`                 | `boolean`   | `true`      | Cache discovery results to `~/.cache/opencode-9router/` |
+| `cacheTTL`              | `number`    | `10800000` (3h) | Cache TTL in milliseconds                           |
+| `discoveryTimeout`      | `number`    | `30000` (30s)  | Timeout for `/v1/models` request in milliseconds     |
+
+### Example with cache and timeout tuning
+
+```json
+{
+  "provider": {
+    "9router": {
+      "options": {
+        "baseURL": "http://localhost:20128",
+        "cache": true,
+        "discoveryTimeout": 60000
+      }
+    },
+    "9router-remote": {
+      "options": {
+        "baseURL": "https://model.idsolutions.id/v1",
+        "apiKey": "sk-...",
+        "cacheTTL": 3600000
+      }
+    }
+  }
+}
+```
+
+### Disable cache
+
+```json
+{
+  "provider": {
+    "9router": {
+      "options": {
+        "baseURL": "http://localhost:20128",
+        "cache": false
+      }
+    }
+  }
+}
 ```
 
 ## Usage
@@ -125,20 +176,47 @@ opencode
 ## How It Works
 
 ```
-opencode.json "plugin": ["@vheins/opencode-9router@0.5.0"]
+opencode.json "plugin": ["@vheins/opencode-9router@latest"]
   ↓
-Bun installs the package from npm
+Plugin loads at startup detects 9Router-family providers in config
   ↓
-Plugin loads at startup:
-  1. Read baseURL from provider config (or use default http://localhost:20128)
-  2. Try GET /v1/models from baseURL (3s timeout)
-  3. If OK → register live models
-  4. If fail → log warning, no models registered
+For each provider:
+  1. Check local cache (~/.cache/opencode-9router/discovery-*.json)
+     └─ Fresh cache (≤3h) → return cached models instantly
+  2. If cache miss/stale:
+     └─ GET {baseURL}/v1/models with 30s timeout (configurable)
+     └─ If OK → register live models + save to cache
+     └─ If fail → fallback to stale cache (if exists), else skip
   ↓
-config hook creates/updates provider "9router" with discovered models
+config hook creates/updates provider with discovered models
   ↓
-Provider "9router" appears in /models
+Provider appears in /models
 ```
+
+### Cache storage
+
+Cache files are stored at `~/.cache/opencode-9router/discovery-{base64url}.json`, one per unique `baseURL`. The cache directory also stores the models.dev capability catalog (`models-dev.json`).
+
+## Changelog
+
+### v0.7.1 — Discovery logging
+- Add INFO-level logging for cache hit/miss, fetch status, timeout, and stale fallback
+
+### v0.7.0 — Caching & timeout
+- **Model discovery cache** — 3-hour TTL with stale fallback when backend is unreachable
+- **Configurable timeout** — 30s default, adjustable via `discoveryTimeout` option
+- **Provider options** — `cache`, `cacheTTL`, `discoveryTimeout`
+- New constant: `DISCOVERY_CACHE_TTL`, `DISCOVERY_TIMEOUT`
+
+### v0.6.0 — Multi-provider & fallback
+- Support multiple 9Router-family providers (`9router`, `9router-local`, etc.)
+- Fallback models catalog via `models.dev` API
+- Per-model capability resolution (vision, tools, reasoning)
+
+### v0.5.x — Initial releases
+- Basic auto-discovery from `localhost:20128`
+- Fallback models when API unreachable
+- Single provider support
 
 ## Development
 
@@ -153,13 +231,16 @@ npm run build
 
 ```bash
 node test-minimal.mjs
+opencode models 9router --print-logs
 ```
 
 ### Publish
 
 ```bash
 npm login
+npm version patch  # or minor, major
 npm publish --access public
+git push --follow-tags
 ```
 
 ## Files
@@ -173,6 +254,7 @@ opencode-9router/
   package.json        # npm package config
   tsconfig.json       # TypeScript config
   README.md           # This file
+  README.id.md        # Bahasa Indonesia version
   LICENSE             # MIT
 ```
 

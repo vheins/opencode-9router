@@ -9,7 +9,7 @@ Mendaftarkan 9Router sebagai custom provider di OpenCode dengan auto-discovery m
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@vheins/opencode-9router@0.5.0"]
+  "plugin": ["@vheins/opencode-9router@latest"]
 }
 ```
 
@@ -22,6 +22,9 @@ Plugin akan otomatis mendeteksi model dari `http://localhost:20128` (default).
 ## Fitur
 
 - **Auto-discover model** — Model dari 9Router terdeteksi otomatis saat startup
+- **Cache cerdas** — Hasil discovery di-cache 3 jam (bisa diatur) untuk startup instan berikutnya
+- **Stale fallback** — Jika backend tidak terjangkau, tetap pakai model dari cache
+- **Timeout bisa diatur** — Timeout discovery default 30 detik, bisa disesuaikan untuk backend lambat
 - **Daftar model dinamis** — Semua model dari 9Router tersedia, termasuk combo kustom
 - **Kompatibel dengan OpenAI** — Menggunakan `@ai-sdk/openai-compatible`
 - **Type-safe** — Menggunakan hook `config` untuk registrasi provider yang sesuai dengan skema konfigurasi OpenCode
@@ -33,7 +36,7 @@ Plugin akan otomatis mendeteksi model dari `http://localhost:20128` (default).
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@vheins/opencode-9router@0.5.0"]
+  "plugin": ["@vheins/opencode-9router@latest"]
 }
 ```
 
@@ -46,7 +49,7 @@ Jika 9Router berjalan di host atau port yang berbeda, tambahkan konfigurasi prov
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@vheins/opencode-9router@0.5.0"],
+  "plugin": ["@vheins/opencode-9router@latest"],
   "provider": {
     "9router": {
       "options": {
@@ -62,7 +65,7 @@ Jika 9Router berjalan di host atau port yang berbeda, tambahkan konfigurasi prov
 ```json
 {
   "$schema": "https://opencode.ai/config.json",
-  "plugin": ["@vheins/opencode-9router@0.5.0"],
+  "plugin": ["@vheins/opencode-9router@latest"],
   "provider": {
     "9router": {
       "options": {
@@ -92,6 +95,54 @@ Atau gunakan environment variable:
 ```bash
 export ROUTER_API_KEY=your-api-key-here
 opencode
+```
+
+## Opsi Provider
+
+| Opsi                 | Tipe     | Default       | Deskripsi                                            |
+| -------------------- | -------- | ------------- | ---------------------------------------------------- |
+| `baseURL`              | `string`   | `http://localhost:20128` | Endpoint API 9Router                                 |
+| `apiKey`               | `string`   | —             | API key (jika backend membutuhkan)                   |
+| `cache`                | `boolean`  | `true`        | Cache hasil discovery ke `~/.cache/opencode-9router/` |
+| `cacheTTL`             | `number`   | `10800000` (3j) | Masa berlaku cache dalam milidetik                  |
+| `discoveryTimeout`     | `number`   | `30000` (30dtk) | Timeout request `/v1/models` dalam milidetik        |
+
+### Contoh dengan tuning cache dan timeout
+
+```json
+{
+  "provider": {
+    "9router": {
+      "options": {
+        "baseURL": "http://localhost:20128",
+        "cache": true,
+        "discoveryTimeout": 60000
+      }
+    },
+    "9router-remote": {
+      "options": {
+        "baseURL": "https://model.idsolutions.id/v1",
+        "apiKey": "sk-...",
+        "cacheTTL": 3600000
+      }
+    }
+  }
+}
+```
+
+### Nonaktifkan cache
+
+```json
+{
+  "provider": {
+    "9router": {
+      "options": {
+        "baseURL": "http://localhost:20128",
+        "cache": false
+      }
+    }
+  }
+}
 ```
 
 ## Penggunaan
@@ -125,20 +176,47 @@ opencode
 ## Cara Kerja
 
 ```
-opencode.json "plugin": ["@vheins/opencode-9router@0.5.0"]
+opencode.json "plugin": ["@vheins/opencode-9router@latest"]
   ↓
-Bun menginstal paket dari npm
+Plugin dimuat saat startup, deteksi provider 9Router-family di config
   ↓
-Plugin dimuat saat startup:
-  1. Baca baseURL dari konfigurasi provider (atau gunakan default http://localhost:20128)
-  2. Coba GET /v1/models dari baseURL (timeout 3 detik)
-  3. Jika berhasil → daftarkan model langsung
-  4. Jika gagal → log peringatan, tidak ada model yang didaftarkan
+Untuk setiap provider:
+  1. Cek cache lokal (~/.cache/opencode-9router/discovery-*.json)
+     └─ Cache masih fresh (≤3j) → langsung pakai model dari cache
+  2. Jika cache tidak ada atau kedaluwarsa:
+     └─ GET {baseURL}/v1/models dengan timeout 30 detik (bisa diatur)
+     └─ Jika sukses → daftarkan model + simpan ke cache
+     └─ Jika gagal → fallback ke cache lama (jika ada), atau skip
   ↓
-Hook config membuat/memperbarui provider "9router" dengan model yang ditemukan
+Hook config membuat/memperbarui provider dengan model yang ditemukan
   ↓
-Provider "9router" muncul di /models
+Provider muncul di /models
 ```
+
+### Penyimpanan cache
+
+File cache disimpan di `~/.cache/opencode-9router/discovery-{base64url}.json`, satu file per `baseURL` unik. Direktori cache juga menyimpan katalog kemampuan models.dev (`models-dev.json`).
+
+## Catatan Rilis
+
+### v0.7.1 — Logging discovery
+- Log level INFO untuk cache hit/miss, status fetch, timeout, dan stale fallback
+
+### v0.7.0 — Caching & timeout
+- **Cache discovery model** — TTL 3 jam dengan stale fallback saat backend tidak terjangkau
+- **Timeout dapat diatur** — Default 30 detik, bisa diubah via opsi `discoveryTimeout`
+- **Opsi provider baru** — `cache`, `cacheTTL`, `discoveryTimeout`
+- Konstanta baru: `DISCOVERY_CACHE_TTL`, `DISCOVERY_TIMEOUT`
+
+### v0.6.0 — Multi-provider & fallback
+- Dukungan multiple provider 9Router (`9router`, `9router-local`, dll.)
+- Katalog model fallback via API `models.dev`
+- Resolusi kemampuan per-model (vision, tools, reasoning)
+
+### v0.5.x — Rilis awal
+- Auto-discovery dasar dari `localhost:20128`
+- Model cadangan saat API tidak terjangkau
+- Dukungan single provider
 
 ## Pengembangan
 
@@ -153,13 +231,16 @@ npm run build
 
 ```bash
 node test-minimal.mjs
+opencode models 9router --print-logs
 ```
 
 ### Publikasi
 
 ```bash
 npm login
+npm version patch  # atau minor, major
 npm publish --access public
+git push --follow-tags
 ```
 
 ## Berkas
@@ -172,8 +253,8 @@ opencode-9router/
   dist/               # Hasil kompilasi (dihasilkan)
   package.json        # Konfigurasi paket npm
   tsconfig.json       # Konfigurasi TypeScript
-  README.md           # Berkas ini (Inggris)
-  README.id.md        # Versi Bahasa Indonesia
+  README.md           # Versi Bahasa Inggris
+  README.id.md        # Berkas ini (Bahasa Indonesia)
   LICENSE             # MIT
 ```
 
