@@ -2,6 +2,7 @@ import type { Hooks, Plugin, PluginInput } from "@opencode-ai/plugin";
 import {
   DEFAULT_API_PATH,
   DEFAULT_BASE_URL,
+  DISCOVERY_CACHE_TTL,
   KNOWN_PROVIDER_PREFIXES,
   MAX_CONCURRENT_INFO,
   MODEL_INFO_TIMEOUT,
@@ -61,6 +62,77 @@ function normalizeBaseURL(url: string): string {
 
 function ensureAPIPath(baseURL: string): string {
   return baseURL.endsWith(DEFAULT_API_PATH) ? baseURL : `${baseURL}${DEFAULT_API_PATH}`;
+}
+
+// ── Discovery Cache ─────────────────────────────────────────
+
+/**
+ * Directory used for all 9router cache files.
+ */
+function cacheDir(): string {
+  return `${process.env.HOME}/.cache/opencode-9router`;
+}
+
+/**
+ * Unique, filesystem-safe cache key for a given baseURL.
+ */
+function discoveryCacheKey(baseURL: string): string {
+  return Buffer.from(baseURL).toString("base64url");
+}
+
+/**
+ * Read a valid (fresh) discovery cache entry.
+ * Returns `null` if missing, stale, or corrupted.
+ */
+function readDiscoveryCache(
+  baseURL: string,
+  ttl: number,
+): Record<string, ModelConfig> | null {
+  const cacheFile = `${cacheDir()}/discovery-${discoveryCacheKey(baseURL)}.json`;
+  try {
+    if (existsSync(cacheFile)) {
+      const stat = statSync(cacheFile);
+      if (Date.now() - stat.mtimeMs < ttl) {
+        return JSON.parse(readFileSync(cacheFile, "utf-8")) as Record<string, ModelConfig>;
+      }
+    }
+  } catch {
+    // Corrupted or unreadable — ignore
+  }
+  return null;
+}
+
+/**
+ * Read a stale (expired) discovery cache entry as fallback.
+ */
+function readStaleDiscoveryCache(
+  baseURL: string,
+): Record<string, ModelConfig> | null {
+  const cacheFile = `${cacheDir()}/discovery-${discoveryCacheKey(baseURL)}.json`;
+  try {
+    if (existsSync(cacheFile)) {
+      return JSON.parse(readFileSync(cacheFile, "utf-8")) as Record<string, ModelConfig>;
+    }
+  } catch {
+    // Corrupted or unreadable — ignore
+  }
+  return null;
+}
+
+/**
+ * Persist discovery results to cache (best-effort).
+ */
+function writeDiscoveryCache(
+  baseURL: string,
+  models: Record<string, ModelConfig>,
+): void {
+  const cacheFile = `${cacheDir()}/discovery-${discoveryCacheKey(baseURL)}.json`;
+  try {
+    mkdirSync(cacheDir(), { recursive: true });
+    writeFileSync(cacheFile, JSON.stringify(models), "utf-8");
+  } catch {
+    // Cache write is best-effort
+  }
 }
 
 // ── Capability Resolution ──────────────────────────────────
@@ -247,7 +319,17 @@ async function resolveCapabilitiesBatch(
 async function discoverModels(
   baseURL: string,
   apiKey?: string,
+  cacheEnabled = true,
+  cacheTTL = DISCOVERY_CACHE_TTL,
 ): Promise<Record<string, ModelConfig> | null> {
+  // ── Cache hit: return fresh cached models ──
+  if (cacheEnabled) {
+    const cached = readDiscoveryCache(baseURL, cacheTTL);
+    if (cached) {
+      return cached;
+    }
+  }
+
   const apiURL = ensureAPIPath(baseURL);
   try {
     const headers: Record<string, string> = {};
@@ -274,7 +356,7 @@ async function discoverModels(
       modelIds.push(model.id);
     }
 
-    // Enrich with capabilities from per-model API and/or models.dev catalog
+    // Enrich with capabilities
     const capabilities = await resolveCapabilitiesBatch(modelIds, apiURL, apiKey);
     for (const [id, caps] of Object.entries(capabilities)) {
       if (models[id]) {
@@ -282,13 +364,26 @@ async function discoverModels(
       }
     }
 
-    // Default: tool_call is true for API-discovered models (like opencode does)
+    // Default: tool_call is true for API-discovered models
     for (const config of Object.values(models)) {
       config.tool_call = config.tool_call ?? true;
     }
 
+    // ── Cache write on success ──
+    if (cacheEnabled) {
+      writeDiscoveryCache(baseURL, models);
+    }
+
     return models;
   } catch {
+    // ── Stale cache fallback: return expired cache if fetch failed ──
+    if (cacheEnabled) {
+      const stale = readStaleDiscoveryCache(baseURL);
+      if (stale) {
+        return stale;
+      }
+    }
+
     return null;
   }
 }
@@ -345,7 +440,11 @@ export const NineRouterPlugin: Plugin = async ({ client }: PluginInput) => {
           const normalizedURL = normalizeBaseURL(baseURL);
           const apiURL = ensureAPIPath(normalizedURL);
 
-          const discovered = await discoverModels(normalizedURL, apiKey);
+          // Per-provider cache configuration
+          const cacheEnabled = (options?.cache as boolean) ?? true;
+          const cacheTTL = (options?.cacheTTL as number) ?? DISCOVERY_CACHE_TTL;
+
+          const discovered = await discoverModels(normalizedURL, apiKey, cacheEnabled, cacheTTL);
 
           provider[key] = {
             npm: existing?.npm ?? "@ai-sdk/openai-compatible",

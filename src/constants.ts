@@ -64,6 +64,9 @@ export const MODELS_DEV_URL = "https://models.dev/api.json";
 /** Cache TTL for the models.dev catalog (5 minutes). */
 export const MODELS_DEV_CACHE_TTL = 5 * 60 * 1000;
 
+/** Default cache TTL for model discovery results (3 hours). */
+export const DISCOVERY_CACHE_TTL = 3 * 60 * 60 * 1000;
+
 /** Timeout per-model info request (3 seconds). */
 export const MODEL_INFO_TIMEOUT = 3000;
 
