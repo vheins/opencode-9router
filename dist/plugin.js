@@ -1,4 +1,4 @@
-import { DEFAULT_API_PATH, DEFAULT_BASE_URL, KNOWN_PROVIDER_PREFIXES, MAX_CONCURRENT_INFO, MODEL_INFO_TIMEOUT, MODELS_DEV_CACHE_TTL, MODELS_DEV_URL, PLUGIN_NAME, PROVIDER_DISPLAY_NAME, } from "./constants.js";
+import { DEFAULT_API_PATH, DEFAULT_BASE_URL, DISCOVERY_CACHE_TTL, DISCOVERY_TIMEOUT, KNOWN_PROVIDER_PREFIXES, MAX_CONCURRENT_INFO, MODEL_INFO_TIMEOUT, MODELS_DEV_CACHE_TTL, MODELS_DEV_URL, PLUGIN_NAME, PROVIDER_DISPLAY_NAME, } from "./constants.js";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 // ── Utility Functions ──────────────────────────────────────
 function formatModelName(modelId) {
@@ -14,6 +14,66 @@ function normalizeBaseURL(url) {
 }
 function ensureAPIPath(baseURL) {
     return baseURL.endsWith(DEFAULT_API_PATH) ? baseURL : `${baseURL}${DEFAULT_API_PATH}`;
+}
+// ── Discovery Cache ─────────────────────────────────────────
+/**
+ * Directory used for all 9router cache files.
+ */
+function cacheDir() {
+    return `${process.env.HOME}/.cache/opencode-9router`;
+}
+/**
+ * Unique, filesystem-safe cache key for a given baseURL.
+ */
+function discoveryCacheKey(baseURL) {
+    return Buffer.from(baseURL).toString("base64url");
+}
+/**
+ * Read a valid (fresh) discovery cache entry.
+ * Returns `null` if missing, stale, or corrupted.
+ */
+function readDiscoveryCache(baseURL, ttl) {
+    const cacheFile = `${cacheDir()}/discovery-${discoveryCacheKey(baseURL)}.json`;
+    try {
+        if (existsSync(cacheFile)) {
+            const stat = statSync(cacheFile);
+            if (Date.now() - stat.mtimeMs < ttl) {
+                return JSON.parse(readFileSync(cacheFile, "utf-8"));
+            }
+        }
+    }
+    catch {
+        // Corrupted or unreadable — ignore
+    }
+    return null;
+}
+/**
+ * Read a stale (expired) discovery cache entry as fallback.
+ */
+function readStaleDiscoveryCache(baseURL) {
+    const cacheFile = `${cacheDir()}/discovery-${discoveryCacheKey(baseURL)}.json`;
+    try {
+        if (existsSync(cacheFile)) {
+            return JSON.parse(readFileSync(cacheFile, "utf-8"));
+        }
+    }
+    catch {
+        // Corrupted or unreadable — ignore
+    }
+    return null;
+}
+/**
+ * Persist discovery results to cache (best-effort).
+ */
+function writeDiscoveryCache(baseURL, models) {
+    const cacheFile = `${cacheDir()}/discovery-${discoveryCacheKey(baseURL)}.json`;
+    try {
+        mkdirSync(cacheDir(), { recursive: true });
+        writeFileSync(cacheFile, JSON.stringify(models), "utf-8");
+    }
+    catch {
+        // Cache write is best-effort
+    }
 }
 // ── Capability Resolution ──────────────────────────────────
 async function fetchModelInfo(apiURL, modelId, apiKey) {
@@ -162,7 +222,14 @@ async function resolveCapabilitiesBatch(modelIds, apiURL, apiKey) {
     return capabilities;
 }
 // ── Model Discovery ─────────────────────────────────────────
-async function discoverModels(baseURL, apiKey) {
+async function discoverModels(baseURL, apiKey, cacheEnabled = true, cacheTTL = DISCOVERY_CACHE_TTL, discoveryTimeout = DISCOVERY_TIMEOUT) {
+    // ── Cache hit: return fresh cached models ──
+    if (cacheEnabled) {
+        const cached = readDiscoveryCache(baseURL, cacheTTL);
+        if (cached) {
+            return cached;
+        }
+    }
     const apiURL = ensureAPIPath(baseURL);
     try {
         const headers = {};
@@ -170,7 +237,7 @@ async function discoverModels(baseURL, apiKey) {
             headers["Authorization"] = `Bearer ${apiKey}`;
         }
         const response = await fetch(`${apiURL}/models`, {
-            signal: AbortSignal.timeout(3000),
+            signal: AbortSignal.timeout(discoveryTimeout),
             headers,
         });
         if (!response.ok)
@@ -185,20 +252,31 @@ async function discoverModels(baseURL, apiKey) {
             models[model.id] = { name: formatModelName(model.id) };
             modelIds.push(model.id);
         }
-        // Enrich with capabilities from per-model API and/or models.dev catalog
+        // Enrich with capabilities
         const capabilities = await resolveCapabilitiesBatch(modelIds, apiURL, apiKey);
         for (const [id, caps] of Object.entries(capabilities)) {
             if (models[id]) {
                 Object.assign(models[id], caps);
             }
         }
-        // Default: tool_call is true for API-discovered models (like opencode does)
+        // Default: tool_call is true for API-discovered models
         for (const config of Object.values(models)) {
             config.tool_call = config.tool_call ?? true;
+        }
+        // ── Cache write on success ──
+        if (cacheEnabled) {
+            writeDiscoveryCache(baseURL, models);
         }
         return models;
     }
     catch {
+        // ── Stale cache fallback: return expired cache if fetch failed ──
+        if (cacheEnabled) {
+            const stale = readStaleDiscoveryCache(baseURL);
+            if (stale) {
+                return stale;
+            }
+        }
         return null;
     }
 }
@@ -245,7 +323,11 @@ export const NineRouterPlugin = async ({ client }) => {
                 const existingName = existing?.name;
                 const normalizedURL = normalizeBaseURL(baseURL);
                 const apiURL = ensureAPIPath(normalizedURL);
-                const discovered = await discoverModels(normalizedURL, apiKey);
+                // Per-provider cache configuration
+                const cacheEnabled = options?.cache ?? true;
+                const cacheTTL = options?.cacheTTL ?? DISCOVERY_CACHE_TTL;
+                const discoveryTimeout = options?.discoveryTimeout ?? DISCOVERY_TIMEOUT;
+                const discovered = await discoverModels(normalizedURL, apiKey, cacheEnabled, cacheTTL, discoveryTimeout);
                 provider[key] = {
                     npm: existing?.npm ?? "@ai-sdk/openai-compatible",
                     name: existingName ?? key,

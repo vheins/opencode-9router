@@ -13,6 +13,10 @@ export declare const FALLBACK_MODELS: Record<string, {
 export declare const MODELS_DEV_URL = "https://models.dev/api.json";
 /** Cache TTL for the models.dev catalog (5 minutes). */
 export declare const MODELS_DEV_CACHE_TTL: number;
+/** Default cache TTL for model discovery results (3 hours). */
+export declare const DISCOVERY_CACHE_TTL: number;
+/** Timeout for model list discovery request (30 seconds). */
+export declare const DISCOVERY_TIMEOUT = 30000;
 /** Timeout per-model info request (3 seconds). */
 export declare const MODEL_INFO_TIMEOUT = 3000;
 /** Max concurrent per-model info requests. */
