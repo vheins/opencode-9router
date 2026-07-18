@@ -29,11 +29,18 @@ function discoveryCacheKey(baseURL) {
     return Buffer.from(baseURL).toString("base64url");
 }
 /**
+ * Cache file path for a provider's discovery result, prefixed with the
+ * provider key so cache files are human-identifiable.
+ */
+function discoveryCacheFile(baseURL, providerKey) {
+    return `${cacheDir()}/discovery-${providerKey}-${discoveryCacheKey(baseURL)}.json`;
+}
+/**
  * Read a valid (fresh) discovery cache entry.
  * Returns `null` if missing, stale, or corrupted.
  */
-function readDiscoveryCache(baseURL, ttl) {
-    const cacheFile = `${cacheDir()}/discovery-${discoveryCacheKey(baseURL)}.json`;
+function readDiscoveryCache(baseURL, ttl, providerKey) {
+    const cacheFile = discoveryCacheFile(baseURL, providerKey);
     try {
         if (existsSync(cacheFile)) {
             const stat = statSync(cacheFile);
@@ -50,8 +57,8 @@ function readDiscoveryCache(baseURL, ttl) {
 /**
  * Read a stale (expired) discovery cache entry as fallback.
  */
-function readStaleDiscoveryCache(baseURL) {
-    const cacheFile = `${cacheDir()}/discovery-${discoveryCacheKey(baseURL)}.json`;
+function readStaleDiscoveryCache(baseURL, providerKey) {
+    const cacheFile = discoveryCacheFile(baseURL, providerKey);
     try {
         if (existsSync(cacheFile)) {
             return JSON.parse(readFileSync(cacheFile, "utf-8"));
@@ -65,8 +72,8 @@ function readStaleDiscoveryCache(baseURL) {
 /**
  * Persist discovery results to cache (best-effort).
  */
-function writeDiscoveryCache(baseURL, models) {
-    const cacheFile = `${cacheDir()}/discovery-${discoveryCacheKey(baseURL)}.json`;
+function writeDiscoveryCache(baseURL, models, providerKey) {
+    const cacheFile = discoveryCacheFile(baseURL, providerKey);
     try {
         mkdirSync(cacheDir(), { recursive: true });
         writeFileSync(cacheFile, JSON.stringify(models), "utf-8");
@@ -121,13 +128,18 @@ async function fetchModelsDevCatalog() {
     const cacheDir = `${process.env.HOME}/.cache/opencode-9router`;
     const cacheFile = `${cacheDir}/models-dev.json`;
     const url = process.env.OPENCODE_MODELS_URL || MODELS_DEV_URL;
-    // Try cache (respect TTL via file mtime)
+    // Try cache — raw API response cached as-is, flattened on read
     try {
         if (existsSync(cacheFile)) {
             const stat = statSync(cacheFile);
             if (Date.now() - stat.mtimeMs < MODELS_DEV_CACHE_TTL) {
                 const content = readFileSync(cacheFile, "utf-8");
-                return flattenModelsDevCatalog(JSON.parse(content));
+                const parsed = JSON.parse(content);
+                // Old (pre-v0.7.7) caches stored a flat array — treat as miss
+                if (!Array.isArray(parsed)) {
+                    return flattenModelsDevCatalog(parsed);
+                }
+                // Fall through to re-fetch if array (old format)
             }
         }
     }
@@ -138,16 +150,17 @@ async function fetchModelsDevCatalog() {
         const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
         if (!response.ok)
             return null;
-        const data = flattenModelsDevCatalog(await response.json());
-        // Best-effort cache write
+        const raw = await response.json();
+        const flattened = flattenModelsDevCatalog(raw);
+        // Best-effort cache write: store raw dict, not flattened array
         try {
             mkdirSync(cacheDir, { recursive: true });
-            writeFileSync(cacheFile, JSON.stringify(data), "utf-8");
+            writeFileSync(cacheFile, JSON.stringify(raw), "utf-8");
         }
         catch {
             // Cache write is optional
         }
-        return data;
+        return flattened;
     }
     catch {
         return null;
@@ -239,10 +252,10 @@ async function resolveCapabilitiesBatch(modelIds, apiURL, apiKey) {
     return capabilities;
 }
 // ── Model Discovery ─────────────────────────────────────────
-async function discoverModels(baseURL, apiKey, cacheEnabled, cacheTTL, discoveryTimeout, log) {
+async function discoverModels(baseURL, apiKey, cacheEnabled, cacheTTL, discoveryTimeout, providerKey, log) {
     // ── Cache hit: return fresh cached models ──
     if (cacheEnabled) {
-        const cached = readDiscoveryCache(baseURL, cacheTTL);
+        const cached = readDiscoveryCache(baseURL, cacheTTL, providerKey);
         if (cached) {
             log("info", `[discovery] Cache HIT for ${baseURL} (${Object.keys(cached).length} models)`);
             return cached;
@@ -289,7 +302,7 @@ async function discoverModels(baseURL, apiKey, cacheEnabled, cacheTTL, discovery
         }
         // ── Cache write on success ──
         if (cacheEnabled) {
-            writeDiscoveryCache(baseURL, models);
+            writeDiscoveryCache(baseURL, models, providerKey);
             log("info", `[discovery] Cached ${Object.keys(models).length} models for ${baseURL}`);
         }
         return models;
@@ -300,7 +313,7 @@ async function discoverModels(baseURL, apiKey, cacheEnabled, cacheTTL, discovery
         // ── Stale cache fallback: return expired cache if fetch failed ──
         log("info", `[discovery] Fetch failed for ${baseURL}, trying stale cache fallback`);
         if (cacheEnabled) {
-            const stale = readStaleDiscoveryCache(baseURL);
+            const stale = readStaleDiscoveryCache(baseURL, providerKey);
             if (stale) {
                 log("info", `[discovery] Stale cache fallback for ${baseURL} (${Object.keys(stale).length} models)`);
                 return stale;
@@ -356,7 +369,7 @@ export const NineRouterPlugin = async ({ client }) => {
                 const cacheEnabled = options?.cache ?? true;
                 const cacheTTL = options?.cacheTTL ?? DISCOVERY_CACHE_TTL;
                 const discoveryTimeout = options?.discoveryTimeout ?? DISCOVERY_TIMEOUT;
-                const discovered = await discoverModels(normalizedURL, apiKey, cacheEnabled, cacheTTL, discoveryTimeout, log);
+                const discovered = await discoverModels(normalizedURL, apiKey, cacheEnabled, cacheTTL, discoveryTimeout, key, log);
                 const entry = provider[key];
                 entry.npm ??= "@ai-sdk/openai-compatible";
                 entry.name ??= key;
