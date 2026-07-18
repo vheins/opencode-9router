@@ -328,7 +328,6 @@ export const NineRouterPlugin = async ({ client }) => {
                 const options = existing?.options;
                 const baseURL = options?.baseURL ?? DEFAULT_BASE_URL;
                 const apiKey = options?.apiKey;
-                const existingName = existing?.name;
                 const normalizedURL = normalizeBaseURL(baseURL);
                 const apiURL = ensureAPIPath(normalizedURL);
                 // Per-provider cache configuration
@@ -336,15 +335,11 @@ export const NineRouterPlugin = async ({ client }) => {
                 const cacheTTL = options?.cacheTTL ?? DISCOVERY_CACHE_TTL;
                 const discoveryTimeout = options?.discoveryTimeout ?? DISCOVERY_TIMEOUT;
                 const discovered = await discoverModels(normalizedURL, apiKey, cacheEnabled, cacheTTL, discoveryTimeout, log);
-                provider[key] = {
-                    npm: existing?.npm ?? "@ai-sdk/openai-compatible",
-                    name: existingName ?? key,
-                    options: {
-                        ...existing?.options,
-                        baseURL: apiURL,
-                    },
-                    models: discovered ?? {},
-                };
+                const entry = provider[key];
+                entry.npm ??= "@ai-sdk/openai-compatible";
+                entry.name ??= key;
+                entry.options = { ...entry.options, baseURL: apiURL };
+                entry.models = discovered ?? {};
                 return { key, discovered, apiURL };
             }));
             // Log results

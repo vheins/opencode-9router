@@ -446,7 +446,6 @@ export const NineRouterPlugin: Plugin = async ({ client }: PluginInput) => {
           const options = existing?.options as Record<string, unknown> | undefined;
           const baseURL = (options?.baseURL as string) ?? DEFAULT_BASE_URL;
           const apiKey = options?.apiKey as string | undefined;
-          const existingName = existing?.name as string | undefined;
 
           const normalizedURL = normalizeBaseURL(baseURL);
           const apiURL = ensureAPIPath(normalizedURL);
@@ -458,15 +457,11 @@ export const NineRouterPlugin: Plugin = async ({ client }: PluginInput) => {
 
           const discovered = await discoverModels(normalizedURL, apiKey, cacheEnabled, cacheTTL, discoveryTimeout, log);
 
-          provider[key] = {
-            npm: existing?.npm ?? "@ai-sdk/openai-compatible",
-            name: existingName ?? key,
-            options: {
-              ...(existing?.options as Record<string, unknown>),
-              baseURL: apiURL,
-            },
-            models: discovered ?? {},
-          };
+          const entry = provider[key] as Record<string, unknown>;
+          entry.npm ??= "@ai-sdk/openai-compatible";
+          entry.name ??= key;
+          entry.options = { ...(entry.options as Record<string, unknown>), baseURL: apiURL };
+          entry.models = discovered ?? {};
 
           return { key, discovered, apiURL };
         }),
