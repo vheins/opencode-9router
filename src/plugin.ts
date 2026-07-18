@@ -200,7 +200,7 @@ async function fetchModelsDevCatalog(): Promise<ModelsDevEntry[] | null> {
       const stat = statSync(cacheFile);
       if (Date.now() - stat.mtimeMs < MODELS_DEV_CACHE_TTL) {
         const content = readFileSync(cacheFile, "utf-8");
-        return JSON.parse(content) as ModelsDevEntry[];
+        return flattenModelsDevCatalog(JSON.parse(content));
       }
     }
   } catch {
@@ -210,7 +210,7 @@ async function fetchModelsDevCatalog(): Promise<ModelsDevEntry[] | null> {
   try {
     const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
     if (!response.ok) return null;
-    const data = (await response.json()) as ModelsDevEntry[];
+    const data = flattenModelsDevCatalog(await response.json());
 
     // Best-effort cache write
     try {
@@ -224,6 +224,25 @@ async function fetchModelsDevCatalog(): Promise<ModelsDevEntry[] | null> {
   } catch {
     return null;
   }
+}
+
+/**
+ * models.dev/api.json returns a dict of providers, each with a nested
+ * models dict. Flatten into a list of { id, capabilities } entries.
+ */
+function flattenModelsDevCatalog(
+  raw: Record<string, { models?: Record<string, ModelsDevEntry> }>,
+): ModelsDevEntry[] {
+  const result: ModelsDevEntry[] = [];
+  for (const provider of Object.values(raw)) {
+    if (!provider?.models) continue;
+    for (const entry of Object.values(provider.models)) {
+      if (entry?.id) {
+        result.push(entry);
+      }
+    }
+  }
+  return result;
 }
 
 function findModelsDevMatch(
@@ -346,13 +365,17 @@ async function discoverModels(
       signal: AbortSignal.timeout(discoveryTimeout),
       headers,
     });
-    if (!response.ok) return null;
+    if (!response.ok) {
+      await log("warn", `[discovery] Fetch not OK: ${response.status} ${response.statusText} for ${apiURL}/models`);
+      return null;
+    }
     log("info", `[discovery] Fetch OK (${response.status}) for ${baseURL}`);
 
     const data = (await response.json()) as {
       data?: Array<{ id: string }>;
     };
     if (!data.data || !Array.isArray(data.data) || data.data.length === 0) {
+      await log("warn", `[discovery] Invalid or empty data from ${apiURL}/models`);
       return null;
     }
 
@@ -383,7 +406,9 @@ async function discoverModels(
     }
 
     return models;
-  } catch {
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    await log("warn", `[discovery] Fetch threw for ${apiURL}/models: ${msg}`);
     // ── Stale cache fallback: return expired cache if fetch failed ──
     log("info", `[discovery] Fetch failed for ${baseURL}, trying stale cache fallback`);
     if (cacheEnabled) {
