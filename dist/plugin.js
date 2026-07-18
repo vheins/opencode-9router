@@ -338,6 +338,7 @@ export const NineRouterPlugin = async ({ client }) => {
                 const entry = provider[key];
                 entry.npm ??= "@ai-sdk/openai-compatible";
                 entry.name ??= key;
+                entry.api = apiURL;
                 entry.options = { ...entry.options, baseURL: apiURL };
                 entry.models = discovered ?? {};
                 return { key, discovered, apiURL };
