@@ -247,6 +247,16 @@ node test-minimal.mjs
 opencode models 9router --print-logs
 ```
 
+### Validate after publish
+
+After publishing to npm, verify the plugin works end-to-end:
+
+```bash
+opencode models 9router-local --print-logs --log-level DEBUG
+```
+
+This runs model discovery against the published package with full debug logging to confirm caching, timeout, and capability resolution are working correctly.
+
 ### Publish
 
 ```bash

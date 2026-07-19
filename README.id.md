@@ -247,6 +247,16 @@ node test-minimal.mjs
 opencode models 9router --print-logs
 ```
 
+### Validasi setelah publikasi
+
+Setelah publikasi ke npm, verifikasi plugin bekerja end-to-end:
+
+```bash
+opencode models 9router-local --print-logs --log-level DEBUG
+```
+
+Perintah ini menjalankan discovery model terhadap paket yang sudah dipublikasikan dengan log level DEBUG penuh untuk memastikan caching, timeout, dan resolusi kemampuan berfungsi dengan benar.
+
 ### Publikasi
 
 ```bash
