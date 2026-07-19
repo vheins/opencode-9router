@@ -13,6 +13,7 @@ import {
   PROVIDER_DISPLAY_NAME,
 } from "./constants.js";
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
 
 // ── Types ──────────────────────────────────────────────────
 
@@ -42,7 +43,11 @@ interface RouterModelInfo {
 
 interface ModelsDevEntry {
   id: string;
+  attachment?: boolean;
+  reasoning?: boolean;
+  tool_call?: boolean;
   capabilities?: RouterModelInfo["capabilities"];
+  modalities?: { input?: string[]; output?: string[] };
   [key: string]: unknown;
 }
 
@@ -55,6 +60,14 @@ function formatModelName(modelId: string): string {
     }
   }
   return modelId;
+}
+
+/**
+ * Sanitize a string to contain only safe filename characters.
+ * Replaces any character that is NOT alphanumeric, dash, underscore, or dot with an underscore.
+ */
+function safeFilename(input: string): string {
+  return input.replace(/[^a-zA-Z0-9._-]/g, "_");
 }
 
 function normalizeBaseURL(url: string): string {
@@ -71,7 +84,18 @@ function ensureAPIPath(baseURL: string): string {
  * Directory used for all 9router cache files.
  */
 function cacheDir(): string {
-  return `${process.env.HOME}/.cache/opencode-9router`;
+  try {
+    if (process.env.XDG_CACHE_HOME) {
+      return `${process.env.XDG_CACHE_HOME}/opencode-9router`;
+    }
+    const home = homedir();
+    if (home) {
+      return `${home}/.cache/opencode-9router`;
+    }
+  } catch {
+    // Fall through to tmpdir
+  }
+  return `${tmpdir()}/opencode-9router`;
 }
 
 /**
@@ -86,7 +110,7 @@ function discoveryCacheKey(baseURL: string): string {
  * provider key so cache files are human-identifiable.
  */
 function discoveryCacheFile(baseURL: string, providerKey: string): string {
-  return `${cacheDir()}/discovery-${providerKey}-${discoveryCacheKey(baseURL)}.json`;
+  return `${cacheDir()}/discovery-${safeFilename(providerKey)}-${discoveryCacheKey(baseURL)}.json`;
 }
 
 /**
@@ -153,24 +177,29 @@ async function fetchModelInfo(
   apiURL: string,
   modelId: string,
   apiKey?: string,
+  retries = 1,
 ): Promise<RouterModelInfo | null> {
-  try {
-    const headers: Record<string, string> = {};
-    if (apiKey) {
-      headers["Authorization"] = `Bearer ${apiKey}`;
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const headers: Record<string, string> = {};
+      if (apiKey) {
+        headers["Authorization"] = `Bearer ${apiKey}`;
+      }
+      const response = await fetch(
+        `${apiURL}/models/info?id=${encodeURIComponent(modelId)}`,
+        {
+          signal: AbortSignal.timeout(MODEL_INFO_TIMEOUT),
+          headers,
+        },
+      );
+      if (!response.ok) return null;
+      return (await response.json()) as RouterModelInfo;
+    } catch {
+      if (attempt === retries) return null;
+      await new Promise((r) => setTimeout(r, 500 * Math.pow(2, attempt)));
     }
-    const response = await fetch(
-      `${apiURL}/models/info?id=${encodeURIComponent(modelId)}`,
-      {
-        signal: AbortSignal.timeout(MODEL_INFO_TIMEOUT),
-        headers,
-      },
-    );
-    if (!response.ok) return null;
-    return (await response.json()) as RouterModelInfo;
-  } catch {
-    return null;
   }
+  return null;
 }
 
 function mapRouterCapabilities(info: RouterModelInfo): Partial<ModelConfig> {
@@ -201,8 +230,8 @@ function mapRouterCapabilities(info: RouterModelInfo): Partial<ModelConfig> {
 }
 
 async function fetchModelsDevCatalog(): Promise<ModelsDevEntry[] | null> {
-  const cacheDir = `${process.env.HOME}/.cache/opencode-9router`;
-  const cacheFile = `${cacheDir}/models-dev.json`;
+  const cacheDirPath = cacheDir();
+  const cacheFile = `${cacheDirPath}/models-dev.json`;
   const url = process.env.OPENCODE_MODELS_URL || MODELS_DEV_URL;
 
   // Try cache — raw API response cached as-is, flattened on read
@@ -231,7 +260,7 @@ async function fetchModelsDevCatalog(): Promise<ModelsDevEntry[] | null> {
 
     // Best-effort cache write: store raw dict, not flattened array
     try {
-      mkdirSync(cacheDir, { recursive: true });
+      mkdirSync(cacheDirPath, { recursive: true });
       writeFileSync(cacheFile, JSON.stringify(raw), "utf-8");
     } catch {
       // Cache write is optional
@@ -302,48 +331,66 @@ function findModelsDevMatch(
   }
 
   if (bestMatch) {
+    const inputModalities = bestMatch.modalities?.input ?? [];
     return {
       id: bestMatch.id,
-      capabilities: bestMatch.capabilities,
+      capabilities: {
+        vision: bestMatch.attachment ?? inputModalities.includes("image"),
+        tools: bestMatch.tool_call ?? false,
+        reasoning: bestMatch.reasoning ?? false,
+        audioInput: inputModalities.includes("audio"),
+      },
     };
   }
 
   return null;
 }
 
+const CAPABILITY_BUDGET_MS = 10000;
+
 async function resolveCapabilitiesBatch(
   modelIds: string[],
   apiURL: string,
   apiKey?: string,
 ): Promise<Record<string, Partial<ModelConfig>>> {
-  // Start catalog fetch in parallel with per-model requests
-  const catalogPromise = fetchModelsDevCatalog();
   const capabilities: Record<string, Partial<ModelConfig>> = {};
 
-  // Try per-model API in batches of MAX_CONCURRENT_INFO
-  for (let i = 0; i < modelIds.length; i += MAX_CONCURRENT_INFO) {
-    const batch = modelIds.slice(i, i + MAX_CONCURRENT_INFO);
+  // 1. Fetch models.dev catalog first (cached 1h → near-instant most runs)
+  const catalog = await fetchModelsDevCatalog();
+
+  // 2. Resolve from catalog, queue remainder for API
+  const pendingIds: string[] = [];
+  for (const id of modelIds) {
+    let resolved = false;
+    if (catalog) {
+      const match = findModelsDevMatch(id, catalog);
+      if (match?.capabilities) {
+        capabilities[id] = mapRouterCapabilities(match);
+        resolved = true;
+      }
+    }
+    if (!resolved) {
+      pendingIds.push(id);
+    }
+  }
+
+  // 3. Only hit per-model API for models not in catalog, with time budget
+  if (pendingIds.length === 0) return capabilities;
+
+  const startTime = Date.now();
+  for (let i = 0; i < pendingIds.length; i += MAX_CONCURRENT_INFO) {
+    if (Date.now() - startTime > CAPABILITY_BUDGET_MS) {
+      // Budget exhausted — give up on remaining models, fallback will serve them
+      break;
+    }
+    const batch = pendingIds.slice(i, i + MAX_CONCURRENT_INFO);
     const results = await Promise.allSettled(
       batch.map((id) => fetchModelInfo(apiURL, id, apiKey)),
     );
-
     for (let j = 0; j < batch.length; j++) {
       const result = results[j];
       if (result.status === "fulfilled" && result.value) {
         capabilities[batch[j]] = mapRouterCapabilities(result.value);
-      }
-    }
-  }
-
-  // Fallback: models.dev catalog for models without API capabilities
-  const catalog = await catalogPromise;
-  if (catalog) {
-    for (const modelId of modelIds) {
-      if (!capabilities[modelId]) {
-        const match = findModelsDevMatch(modelId, catalog);
-        if (match) {
-          capabilities[modelId] = mapRouterCapabilities(match);
-        }
       }
     }
   }
@@ -384,8 +431,7 @@ async function discoverModels(
       headers,
     });
     if (!response.ok) {
-      await log("warn", `[discovery] Fetch not OK: ${response.status} ${response.statusText} for ${apiURL}/models`);
-      return null;
+      throw new Error(`Fetch not OK: ${response.status} ${response.statusText}`);
     }
     log("info", `[discovery] Fetch OK (${response.status}) for ${baseURL}`);
 
@@ -393,11 +439,10 @@ async function discoverModels(
       data?: Array<{ id: string }>;
     };
     if (!data.data || !Array.isArray(data.data) || data.data.length === 0) {
-      await log("warn", `[discovery] Invalid or empty data from ${apiURL}/models`);
-      return null;
+      throw new Error(`Empty or invalid response data from ${apiURL}/models`);
     }
 
-    const models: Record<string, ModelConfig> = {};
+    const models = Object.create(null) as Record<string, ModelConfig>;
     const modelIds: string[] = [];
     for (const model of data.data) {
       models[model.id] = { name: formatModelName(model.id) };

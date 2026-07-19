@@ -61,8 +61,8 @@ export const FALLBACK_MODELS: Record<string, { name: string }> = {
 /** URL for the models.dev capability catalog. */
 export const MODELS_DEV_URL = "https://models.dev/api.json";
 
-/** Cache TTL for the models.dev catalog (5 minutes). */
-export const MODELS_DEV_CACHE_TTL = 5 * 60 * 1000;
+/** Cache TTL for the models.dev catalog (1 hour). */
+export const MODELS_DEV_CACHE_TTL = 60 * 60 * 1000;
 
 /** Default cache TTL for model discovery results (3 hours). */
 export const DISCOVERY_CACHE_TTL = 3 * 60 * 60 * 1000;
@@ -70,11 +70,11 @@ export const DISCOVERY_CACHE_TTL = 3 * 60 * 60 * 1000;
 /** Timeout for model list discovery request (30 seconds). */
 export const DISCOVERY_TIMEOUT = 30000;
 
-/** Timeout per-model info request (3 seconds). */
-export const MODEL_INFO_TIMEOUT = 3000;
+/** Timeout per-model info request (5 seconds). */
+export const MODEL_INFO_TIMEOUT = 5000;
 
 /** Max concurrent per-model info requests. */
-export const MAX_CONCURRENT_INFO = 5;
+export const MAX_CONCURRENT_INFO = 15;
 
 /** Known provider prefixes in 9Router model IDs for human-readable naming. */
 export const KNOWN_PROVIDER_PREFIXES: Record<string, string> = {
