@@ -28,6 +28,16 @@ type ModelConfig = {
     output: Array<"text" | "audio" | "image" | "video" | "pdf">;
   };
   interleaved?: true | { field: "reasoning" | "reasoning_content" | "reasoning_details" };
+  /**
+   * Context window / max output token limits. OpenCode uses `limit.context`
+   * to compute the context-usage percentage shown in the UI; without it,
+   * OpenCode treats the model's context as unknown and always reports 0%
+   * used regardless of actual token consumption.
+   */
+  limit?: {
+    context: number;
+    output?: number;
+  };
 };
 
 interface RouterModelInfo {
@@ -38,7 +48,11 @@ interface RouterModelInfo {
     tools?: boolean;
     reasoning?: boolean;
     search?: boolean;
+    contextWindow?: number;
+    maxOutput?: number;
   };
+  context_length?: number;
+  max_completion_tokens?: number;
 }
 
 interface ModelsDevEntry {
@@ -48,6 +62,7 @@ interface ModelsDevEntry {
   tool_call?: boolean;
   capabilities?: RouterModelInfo["capabilities"];
   modalities?: { input?: string[]; output?: string[] };
+  limit?: { context?: number; output?: number };
   [key: string]: unknown;
 }
 
@@ -226,6 +241,16 @@ function mapRouterCapabilities(info: RouterModelInfo): Partial<ModelConfig> {
     config.modalities = { input: Array.from(inputModalities), output: ["text"] };
   }
 
+  // Context window / max output limits. OpenCode's context-usage percentage
+  // is computed from `limit.context`; without it, the UI always shows 0%
+  // used. 9Router exposes these both nested under `capabilities` and as
+  // top-level `context_length` / `max_completion_tokens` fields.
+  const contextWindow = info.capabilities?.contextWindow ?? info.context_length;
+  if (contextWindow) {
+    const maxOutput = info.capabilities?.maxOutput ?? info.max_completion_tokens;
+    config.limit = maxOutput ? { context: contextWindow, output: maxOutput } : { context: contextWindow };
+  }
+
   return config;
 }
 
@@ -339,6 +364,8 @@ function findModelsDevMatch(
         tools: bestMatch.tool_call ?? false,
         reasoning: bestMatch.reasoning ?? false,
         audioInput: inputModalities.includes("audio"),
+        contextWindow: bestMatch.limit?.context,
+        maxOutput: bestMatch.limit?.output,
       },
     };
   }
