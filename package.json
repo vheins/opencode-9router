@@ -35,6 +35,8 @@
   ],
   "scripts": {
     "build": "tsc",
+    "pretest": "npm run build",
+    "test": "node test-minimal.mjs && node test-limit.mjs",
     "prepublishOnly": "npm run build"
   },
   "devDependencies": {

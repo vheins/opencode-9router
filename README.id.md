@@ -271,7 +271,12 @@ git push --follow-tags
 ```
 opencode-9router/
   src/
-    plugin.ts         # Logika plugin utama
+    plugin.ts         # Entry plugin (registrasi provider + config hook)
+    discovery.ts      # Pipeline discovery model
+    capabilities.ts   # Resolusi kapabilitas (katalog + per-model API)
+    cache.ts          # Cache discovery + models.dev
+    types.ts          # Tipe bersama
+    utils.ts          # Helper bersama
     constants.ts      # Model, default, prefix
   dist/               # Hasil kompilasi (dihasilkan)
   package.json        # Konfigurasi paket npm
