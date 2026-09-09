@@ -271,7 +271,12 @@ git push --follow-tags
 ```
 opencode-9router/
   src/
-    plugin.ts         # Main plugin logic
+    plugin.ts         # Plugin entry (provider registration + config hook)
+    discovery.ts      # Model discovery pipeline
+    capabilities.ts   # Capability resolution (catalog + per-model API)
+    cache.ts          # Discovery + models.dev cache
+    types.ts          # Shared types
+    utils.ts          # Shared helpers
     constants.ts      # Models, defaults, prefixes
   dist/               # Compiled output (generated)
   package.json        # npm package config
