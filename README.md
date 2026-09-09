@@ -53,10 +53,10 @@ Add one or more 9Router-family providers with custom options:
   "provider": {
     "9router": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "ID Solutions",
+      "name": "Your Provider",
       "options": {
-        "baseURL": "https://model.idsolutions.id/v1",
-        "apiKey": "sk-70c801f54ddaab6e-pbot5n-2002c5b3",
+        "baseURL": "https://your-9router-endpoint.example.com/v1",
+        "apiKey": "{env:ROUTER_API_KEY}",
         "cache": true,
         "cacheTTL": 10800000,
         "discoveryTimeout": 60000
@@ -77,6 +77,8 @@ Add one or more 9Router-family providers with custom options:
 ```
 
 Each provider key must start with `9router`. The `npm` must be `@ai-sdk/openai-compatible`. The `name` is a display label shown in OpenCode.
+
+> **Never commit real API keys.** Replace the `baseURL`/`apiKey` above with your own endpoint and a placeholder such as `{env:ROUTER_API_KEY}` (or a dummy value like `sk-...`). Real keys belong in environment variables, not in `opencode.json` or this README.
 
 ### With Environment Variable
 
@@ -130,8 +132,8 @@ opencode
       "npm": "@ai-sdk/openai-compatible",
       "name": "Remote API",
       "options": {
-        "baseURL": "https://model.idsolutions.id/v1",
-        "apiKey": "sk-...",
+        "baseURL": "https://your-9router-endpoint.example.com/v1",
+        "apiKey": "{env:ROUTER_API_KEY}",
         "cacheTTL": 3600000
       }
     }

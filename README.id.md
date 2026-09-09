@@ -53,10 +53,10 @@ Tambahkan satu atau lebih provider 9Router dengan opsi kustom:
   "provider": {
     "9router": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "ID Solutions",
+      "name": "Provider Anda",
       "options": {
-        "baseURL": "https://model.idsolutions.id/v1",
-        "apiKey": "sk-70c801f54ddaab6e-pbot5n-2002c5b3",
+        "baseURL": "https://your-9router-endpoint.example.com/v1",
+        "apiKey": "{env:ROUTER_API_KEY}",
         "cache": true,
         "cacheTTL": 10800000,
         "discoveryTimeout": 60000
@@ -77,6 +77,8 @@ Tambahkan satu atau lebih provider 9Router dengan opsi kustom:
 ```
 
 Setiap key provider harus diawali `9router`. `npm` harus `@ai-sdk/openai-compatible`. `name` adalah label yang tampil di OpenCode.
+
+> **Jangan pernah commit API key asli.** Ganti `baseURL`/`apiKey` di atas dengan endpoint Anda sendiri dan placeholder seperti `{env:ROUTER_API_KEY}` (atau nilai dummy seperti `sk-...`). Key asli sebaiknya disimpan di environment variable, bukan di `opencode.json` atau README ini.
 
 ### Dengan Environment Variable
 
@@ -130,8 +132,8 @@ opencode
       "npm": "@ai-sdk/openai-compatible",
       "name": "Remote API",
       "options": {
-        "baseURL": "https://model.idsolutions.id/v1",
-        "apiKey": "sk-...",
+        "baseURL": "https://your-9router-endpoint.example.com/v1",
+        "apiKey": "{env:ROUTER_API_KEY}",
         "cacheTTL": 3600000
       }
     }
