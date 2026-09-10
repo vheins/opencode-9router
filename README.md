@@ -215,6 +215,10 @@ Cache files are stored at `~/.cache/opencode-9router/discovery-{base64url}.json`
 
 ## Changelog
 
+### v0.8.1 — Strict combo enrichment
+- Combos count as enriched only on an **exact** models.dev segment match (no more loose substring hits like `vision` → `gpt-4-turbo-vision`)
+- Ignore bare `/models/info` capability stubs (`{tools: true}`) for combos, so backends that return stubs still get forced multimodal defaults
+
 ### v0.8.0 — Combo multimodal defaults
 - Detect combo models via `owned_by: "combo"` (fallback: no provider prefix)
 - Force multimodal defaults on combos with no resolved capability info: text/image/audio input, tool calling, reasoning, 256K context, 128K output

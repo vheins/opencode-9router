@@ -70,7 +70,7 @@ export async function discoverModels(
     }
 
     // Enrich with capabilities
-    const capabilities = await resolveCapabilitiesBatch(modelIds, apiURL, apiKey);
+    const capabilities = await resolveCapabilitiesBatch(modelIds, apiURL, apiKey, comboIds);
     for (const [id, caps] of Object.entries(capabilities)) {
       if (models[id]) {
         Object.assign(models[id], caps);
@@ -82,11 +82,10 @@ export async function discoverModels(
       config.tool_call = config.tool_call ?? true;
     }
 
-    // Combos with no resolved capability info get forced multimodal defaults.
+    // Combos with no real capability info get forced multimodal defaults.
     for (const id of comboIds) {
       const config = models[id];
-      const resolved = capabilities[id];
-      if (config && (!resolved || Object.keys(resolved).length === 0)) {
+      if (config && !capabilities[id]) {
         Object.assign(config, forceComboConfig());
       }
     }

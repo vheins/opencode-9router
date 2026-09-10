@@ -215,6 +215,10 @@ File cache disimpan di `~/.cache/opencode-9router/discovery-{base64url}.json`, s
 
 ## Catatan Rilis
 
+### v0.8.1 — Enrichment combo ketat
+- Combo dianggap ter-enrich hanya bila match segmen models.dev **persis** (tidak lagi cocok substring longgar seperti `vision` → `gpt-4-turbo-vision`)
+- Abaikan stub kemampuan `/models/info` (`{tools: true}`) untuk combo, sehingga backend yang membalas stub tetap mendapat default multimodal
+
 ### v0.8.0 — Default multimodal combo
 - Deteksi model combo via `owned_by: "combo"` (fallback: tanpa prefix provider)
 - Paksa default multimodal pada combo tanpa info kemampuan: input teks/gambar/audio, tool calling, reasoning, konteks 256K, output 128K

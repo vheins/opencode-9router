@@ -124,16 +124,9 @@ export function mapRouterCapabilities(info: RouterModelInfo): Partial<ModelConfi
   return config;
 }
 
-/**
- * Find the best models.dev catalog entry for a model ID, matching by suffix
- * (preferred) or substring after stripping known provider prefixes.
- * Returns null when nothing matches.
- */
-export function findModelsDevMatch(
-  modelId: string,
-  catalog: ModelsDevEntry[],
-): RouterModelInfo | null {
-  // Known prefixes to strip from model IDs before matching
+/** Normalize a model ID for catalog comparison: strip a known provider
+ * prefix, lowercase, and canonicalize dots to dashes. */
+function normalizeModelId(modelId: string): string {
   const stripPrefixes = [
     ...Object.keys(KNOWN_PROVIDER_PREFIXES),
     "nvidia/",
@@ -151,7 +144,45 @@ export function findModelsDevMatch(
     }
   }
 
-  const normalized = stripped.toLowerCase().replace(/\./g, "-");
+  return stripped.toLowerCase().replace(/\./g, "-");
+}
+
+/** Last path segment of a catalog ID, normalized for comparison. */
+function catalogLastSegment(catalogId: string): string {
+  const parts = catalogId.toLowerCase().replace(/\./g, "-").split("/");
+  return parts[parts.length - 1] ?? "";
+}
+
+/** Project a models.dev entry onto the RouterModelInfo shape. */
+function toRouterModelInfo(entry: ModelsDevEntry): RouterModelInfo {
+  const inputModalities = entry.modalities?.input ?? [];
+  return {
+    id: entry.id,
+    capabilities: {
+      vision: entry.attachment ?? inputModalities.includes("image"),
+      tools: entry.tool_call ?? false,
+      reasoning: entry.reasoning ?? false,
+      audioInput: inputModalities.includes("audio"),
+      // models.dev exposes token limits at the entry's top level as
+      // limit.context / limit.output. Mirror them onto the capabilities
+      // fields mapRouterCapabilities reads so they reach config.limit
+      // through the single validated path (toPositiveInt).
+      contextWindow: entry.limit?.context,
+      maxOutput: entry.limit?.output,
+    },
+  };
+}
+
+/**
+ * Find the best models.dev catalog entry for a model ID, matching by suffix
+ * (preferred) or substring after stripping known provider prefixes.
+ * Returns null when nothing matches.
+ */
+export function findModelsDevMatch(
+  modelId: string,
+  catalog: ModelsDevEntry[],
+): RouterModelInfo | null {
+  const normalized = normalizeModelId(modelId);
 
   let bestMatch: ModelsDevEntry | null = null;
 
@@ -168,26 +199,39 @@ export function findModelsDevMatch(
     }
   }
 
-  if (bestMatch) {
-    const inputModalities = bestMatch.modalities?.input ?? [];
-    return {
-      id: bestMatch.id,
-      capabilities: {
-        vision: bestMatch.attachment ?? inputModalities.includes("image"),
-        tools: bestMatch.tool_call ?? false,
-        reasoning: bestMatch.reasoning ?? false,
-        audioInput: inputModalities.includes("audio"),
-        // models.dev exposes token limits at the entry's top level as
-        // limit.context / limit.output. Mirror them onto the capabilities
-        // fields mapRouterCapabilities reads so they reach config.limit
-        // through the single validated path (toPositiveInt).
-        contextWindow: bestMatch.limit?.context,
-        maxOutput: bestMatch.limit?.output,
-      },
-    };
-  }
+  return bestMatch ? toRouterModelInfo(bestMatch) : null;
+}
 
+/**
+ * Find a models.dev catalog entry whose final path segment exactly equals the
+ * normalized model ID. Stricter than {@link findModelsDevMatch}: a loose
+ * substring hit (e.g. `vision` → `gpt-4-turbo-vision`) is rejected, so combo
+ * models are only treated as enriched when the catalog truly knows them.
+ */
+export function findModelsDevMatchExact(
+  modelId: string,
+  catalog: ModelsDevEntry[],
+): RouterModelInfo | null {
+  const normalized = normalizeModelId(modelId);
+  for (const entry of catalog) {
+    if (typeof entry.id === "string" && catalogLastSegment(entry.id) === normalized) {
+      return toRouterModelInfo(entry);
+    }
+  }
   return null;
+}
+
+/**
+ * Whether a `/models/info` response carries a meaningful capability signal.
+ * A bare `tools: true` (the default stub returned by some 9Router backends) is
+ * NOT a signal; vision, reasoning, audio input, or a positive token limit are.
+ */
+export function isRealRouterSignal(info: RouterModelInfo): boolean {
+  const capabilities = info.capabilities;
+  if (capabilities?.vision || capabilities?.reasoning || capabilities?.audioInput) {
+    return true;
+  }
+  return toPositiveInt(capabilities?.contextWindow ?? info.context_length) !== undefined;
 }
 
 const CAPABILITY_BUDGET_MS = 10000;
@@ -195,11 +239,17 @@ const CAPABILITY_BUDGET_MS = 10000;
 /**
  * Resolve capabilities for a batch of model IDs using the models.dev catalog
  * first, then falling back to per-model API queries within a time budget.
+ *
+ * Combo IDs (see {@link isComboModel}) are held to a stricter bar: they only
+ * count as resolved on an exact models.dev match or a meaningful API signal,
+ * so backends that return a capability stub for combos do not suppress the
+ * forced multimodal defaults.
  */
 export async function resolveCapabilitiesBatch(
   modelIds: string[],
   apiURL: string,
   apiKey?: string,
+  comboIds?: ReadonlySet<string>,
 ): Promise<Record<string, Partial<ModelConfig>>> {
   const capabilities: Record<string, Partial<ModelConfig>> = {};
 
@@ -209,9 +259,12 @@ export async function resolveCapabilitiesBatch(
   // 2. Resolve from catalog, queue remainder for API
   const pendingIds: string[] = [];
   for (const id of modelIds) {
+    const isCombo = comboIds?.has(id) ?? false;
     let resolved = false;
     if (catalog) {
-      const match = findModelsDevMatch(id, catalog);
+      const match = isCombo
+        ? findModelsDevMatchExact(id, catalog)
+        : findModelsDevMatch(id, catalog);
       if (match?.capabilities) {
         capabilities[id] = mapRouterCapabilities(match);
         resolved = true;
@@ -238,7 +291,11 @@ export async function resolveCapabilitiesBatch(
     for (let j = 0; j < batch.length; j++) {
       const result = results[j];
       if (result.status === "fulfilled" && result.value) {
-        capabilities[batch[j]] = mapRouterCapabilities(result.value);
+        const id = batch[j];
+        if (comboIds?.has(id) && !isRealRouterSignal(result.value)) {
+          continue;
+        }
+        capabilities[id] = mapRouterCapabilities(result.value);
       }
     }
   }
