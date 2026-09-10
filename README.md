@@ -26,6 +26,7 @@ The plugin will auto-discover models from `http://localhost:20128` (default).
 - **Stale fallback** — If the backend is unreachable, returns cached models instead of failing
 - **Configurable timeout** — Adjustable discovery timeout (default 30s) for slow backends
 - **Dynamic model list** — All models from 9Router are available, including custom combos
+- **Combo multimodal defaults** — Combo models (`owned_by: "combo"`) that expose no capability info are forced to accept text/image/audio input with tool calling, reasoning, 256K context, 128K output, and `low`/`medium`/`high`/`xhigh`/`max`/`minimal`/`thinking` variants
 - **OpenAI-compatible** — Uses `@ai-sdk/openai-compatible`
 - **Type-safe** — Uses the `config` hook for provider registration that conforms to the OpenCode config schema
 
@@ -213,6 +214,12 @@ Provider appears in /models
 Cache files are stored at `~/.cache/opencode-9router/discovery-{base64url}.json`, one per unique `baseURL`. The cache directory also stores the models.dev capability catalog (`models-dev.json`).
 
 ## Changelog
+
+### v0.8.0 — Combo multimodal defaults
+- Detect combo models via `owned_by: "combo"` (fallback: no provider prefix)
+- Force multimodal defaults on combos with no resolved capability info: text/image/audio input, tool calling, reasoning, 256K context, 128K output
+- Add `low`/`medium`/`high`/`xhigh`/`max`/`minimal`/`thinking` variants, plus `search: false`, `context_length`, and `max_completion_tokens`
+- Version discovery cache so older entries are refetched
 
 ### v0.7.1 — Discovery logging
 - Add INFO-level logging for cache hit/miss, fetch status, timeout, and stale fallback

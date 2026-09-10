@@ -1,9 +1,51 @@
 import type { ModelConfig, ModelsDevEntry, RouterModelInfo } from "./types.js";
-import { KNOWN_PROVIDER_PREFIXES, MAX_CONCURRENT_INFO, MODEL_INFO_TIMEOUT } from "./constants.js";
+import {
+  COMBO_CONTEXT_WINDOW,
+  COMBO_MAX_OUTPUT,
+  COMBO_OWNER,
+  COMBO_REASONING_EFFORTS,
+  KNOWN_PROVIDER_PREFIXES,
+  MAX_CONCURRENT_INFO,
+  MODEL_INFO_TIMEOUT,
+} from "./constants.js";
 import { fetchModelsDevCatalog } from "./cache.js";
 import { toPositiveInt } from "./utils.js";
 
 // ── Capability Resolution ──────────────────────────────────
+
+/**
+ * Detect whether a model is a 9Router virtual combo. The authoritative signal
+ * is `owned_by === "combo"`; when `owned_by` is absent (legacy responses) fall
+ * back to the prefix heuristic where combo IDs carry no provider prefix.
+ */
+export function isComboModel(modelId: string, ownedBy?: string): boolean {
+  if (ownedBy !== undefined) {
+    return ownedBy === COMBO_OWNER;
+  }
+  return !modelId.includes("/");
+}
+
+/**
+ * Capability fragment forced onto combo models that resolved no information
+ * from the models.dev catalog or the per-model API. Assumes multimodal input
+ * (text/image/audio), tool calling, and reasoning, and exposes thinking-level
+ * variants explicitly so they survive OpenCode's id-based exclusions.
+ */
+export function forceComboConfig(): Partial<ModelConfig> {
+  return {
+    attachment: true,
+    tool_call: true,
+    reasoning: true,
+    modalities: { input: ["text", "image", "audio"], output: ["text"] },
+    limit: { context: COMBO_CONTEXT_WINDOW, output: COMBO_MAX_OUTPUT },
+    variants: Object.fromEntries(
+      COMBO_REASONING_EFFORTS.map((effort) => [effort, { reasoningEffort: effort }]),
+    ),
+    search: false,
+    context_length: COMBO_CONTEXT_WINDOW,
+    max_completion_tokens: COMBO_MAX_OUTPUT,
+  };
+}
 
 /**
  * Query the per-model `/models/info` endpoint of a 9Router-compatible API.

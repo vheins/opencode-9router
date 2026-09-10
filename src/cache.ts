@@ -1,8 +1,17 @@
 import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import type { ModelConfig, ModelsDevEntry } from "./types.js";
-import { MODELS_DEV_CACHE_TTL, MODELS_DEV_URL } from "./constants.js";
+import { DISCOVERY_CACHE_VERSION, MODELS_DEV_CACHE_TTL, MODELS_DEV_URL } from "./constants.js";
 import { safeFilename } from "./utils.js";
+
+/**
+ * Versioned envelope persisted in discovery cache files. The version gate lets
+ * a config-shape change invalidate entries written by older plugin versions.
+ */
+interface DiscoveryCacheEnvelope {
+  v: number;
+  models: Record<string, ModelConfig>;
+}
 
 // ── Discovery Cache ─────────────────────────────────────────
 
@@ -53,11 +62,31 @@ export function readDiscoveryCache(
     if (existsSync(cacheFile)) {
       const stat = statSync(cacheFile);
       if (Date.now() - stat.mtimeMs < ttl) {
-        return JSON.parse(readFileSync(cacheFile, "utf-8")) as Record<string, ModelConfig>;
+        return parseDiscoveryCache(readFileSync(cacheFile, "utf-8"));
       }
     }
   } catch {
     // Corrupted or unreadable — ignore
+  }
+  return null;
+}
+
+/**
+ * Parse a discovery cache file, accepting only entries written by the current
+ * DISCOVERY_CACHE_VERSION. Legacy (bare, unversioned) or future entries are
+ * treated as a miss so the model list is refetched with current logic.
+ */
+function parseDiscoveryCache(raw: string): Record<string, ModelConfig> | null {
+  const parsed = JSON.parse(raw) as DiscoveryCacheEnvelope | Record<string, ModelConfig>;
+  const envelope = parsed as DiscoveryCacheEnvelope;
+  if (
+    envelope &&
+    typeof envelope === "object" &&
+    envelope.v === DISCOVERY_CACHE_VERSION &&
+    envelope.models &&
+    typeof envelope.models === "object"
+  ) {
+    return envelope.models;
   }
   return null;
 }
@@ -72,7 +101,7 @@ export function readStaleDiscoveryCache(
   const cacheFile = discoveryCacheFile(baseURL, providerKey);
   try {
     if (existsSync(cacheFile)) {
-      return JSON.parse(readFileSync(cacheFile, "utf-8")) as Record<string, ModelConfig>;
+      return parseDiscoveryCache(readFileSync(cacheFile, "utf-8"));
     }
   } catch {
     // Corrupted or unreadable — ignore
@@ -91,7 +120,8 @@ export function writeDiscoveryCache(
   const cacheFile = discoveryCacheFile(baseURL, providerKey);
   try {
     mkdirSync(cacheDir(), { recursive: true });
-    writeFileSync(cacheFile, JSON.stringify(models), "utf-8");
+    const envelope: DiscoveryCacheEnvelope = { v: DISCOVERY_CACHE_VERSION, models };
+    writeFileSync(cacheFile, JSON.stringify(envelope), "utf-8");
   } catch {
     // Cache write is best-effort
   }

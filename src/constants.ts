@@ -76,6 +76,35 @@ export const MODEL_INFO_TIMEOUT = 5000;
 /** Max concurrent per-model info requests. */
 export const MAX_CONCURRENT_INFO = 15;
 
+/** `owned_by` value 9Router assigns to virtual combo models. */
+export const COMBO_OWNER = "combo";
+
+/** Default context window forced onto unenriched combo models (256K). */
+export const COMBO_CONTEXT_WINDOW = 262144;
+
+/** Default max output tokens forced onto unenriched combo models (128K). */
+export const COMBO_MAX_OUTPUT = 131072;
+
+/**
+ * Thinking-level variants exposed for forced combos. Every level is forwarded
+ * verbatim as `reasoningEffort` so OpenCode users can pick any of them.
+ */
+export const COMBO_REASONING_EFFORTS = [
+  "low",
+  "medium",
+  "high",
+  "xhigh",
+  "max",
+  "minimal",
+  "thinking",
+] as const;
+
+/**
+ * Discovery cache format version. Bumped whenever the stored model config
+ * shape changes so stale entries are refetched instead of served as-is.
+ */
+export const DISCOVERY_CACHE_VERSION = 2;
+
 /** Known provider prefixes in 9Router model IDs for human-readable naming. */
 export const KNOWN_PROVIDER_PREFIXES: Record<string, string> = {
   "cc/": "Claude Code",

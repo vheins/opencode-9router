@@ -29,6 +29,10 @@ export type ModelConfig = {
   };
   interleaved?: true | { field: "reasoning" | "reasoning_content" | "reasoning_details" };
   limit?: ModelLimits;
+  variants?: Record<string, Record<string, unknown>>;
+  search?: boolean;
+  context_length?: number;
+  max_completion_tokens?: number;
 };
 
 /**

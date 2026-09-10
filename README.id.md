@@ -26,6 +26,7 @@ Plugin akan otomatis mendeteksi model dari `http://localhost:20128` (default).
 - **Stale fallback** — Jika backend tidak terjangkau, tetap pakai model dari cache
 - **Timeout bisa diatur** — Timeout discovery default 30 detik, bisa disesuaikan untuk backend lambat
 - **Daftar model dinamis** — Semua model dari 9Router tersedia, termasuk combo kustom
+- **Default multimodal combo** — Model combo (`owned_by: "combo"`) yang tidak memberikan info kemampuan dipaksa menerima input teks/gambar/audio dengan tool calling, reasoning, konteks 256K, output 128K, dan varian `low`/`medium`/`high`/`xhigh`/`max`/`minimal`/`thinking`
 - **Kompatibel dengan OpenAI** — Menggunakan `@ai-sdk/openai-compatible`
 - **Type-safe** — Menggunakan hook `config` untuk registrasi provider yang sesuai dengan skema konfigurasi OpenCode
 
@@ -213,6 +214,12 @@ Provider muncul di /models
 File cache disimpan di `~/.cache/opencode-9router/discovery-{base64url}.json`, satu file per `baseURL` unik. Direktori cache juga menyimpan katalog kemampuan models.dev (`models-dev.json`).
 
 ## Catatan Rilis
+
+### v0.8.0 — Default multimodal combo
+- Deteksi model combo via `owned_by: "combo"` (fallback: tanpa prefix provider)
+- Paksa default multimodal pada combo tanpa info kemampuan: input teks/gambar/audio, tool calling, reasoning, konteks 256K, output 128K
+- Tambah varian `low`/`medium`/`high`/`xhigh`/`max`/`minimal`/`thinking`, serta `search: false`, `context_length`, dan `max_completion_tokens`
+- Versi cache discovery agar entri lama diambil ulang
 
 ### v0.7.1 — Logging discovery
 - Log level INFO untuk cache hit/miss, status fetch, timeout, dan stale fallback

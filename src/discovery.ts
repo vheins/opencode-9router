@@ -1,6 +1,6 @@
 import type { ModelConfig } from "./types.js";
 import { readDiscoveryCache, readStaleDiscoveryCache, writeDiscoveryCache } from "./cache.js";
-import { resolveCapabilitiesBatch } from "./capabilities.js";
+import { forceComboConfig, isComboModel, resolveCapabilitiesBatch } from "./capabilities.js";
 import { ensureAPIPath, formatModelName } from "./utils.js";
 
 // ── Model Discovery ─────────────────────────────────────────
@@ -52,7 +52,7 @@ export async function discoverModels(
     log("info", `[discovery] Fetch OK (${response.status}) for ${baseURL}`);
 
     const data = (await response.json()) as {
-      data?: Array<{ id: string }>;
+      data?: Array<{ id: string; owned_by?: string }>;
     };
     if (!data.data || !Array.isArray(data.data) || data.data.length === 0) {
       throw new Error(`Empty or invalid response data from ${apiURL}/models`);
@@ -60,9 +60,13 @@ export async function discoverModels(
 
     const models = Object.create(null) as Record<string, ModelConfig>;
     const modelIds: string[] = [];
+    const comboIds = new Set<string>();
     for (const model of data.data) {
       models[model.id] = { name: formatModelName(model.id) };
       modelIds.push(model.id);
+      if (isComboModel(model.id, model.owned_by)) {
+        comboIds.add(model.id);
+      }
     }
 
     // Enrich with capabilities
@@ -76,6 +80,15 @@ export async function discoverModels(
     // Default: tool_call is true for API-discovered models
     for (const config of Object.values(models)) {
       config.tool_call = config.tool_call ?? true;
+    }
+
+    // Combos with no resolved capability info get forced multimodal defaults.
+    for (const id of comboIds) {
+      const config = models[id];
+      const resolved = capabilities[id];
+      if (config && (!resolved || Object.keys(resolved).length === 0)) {
+        Object.assign(config, forceComboConfig());
+      }
     }
 
     // ── Cache write on success ──
