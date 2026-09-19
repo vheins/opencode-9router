@@ -83,7 +83,8 @@ async function fetchModelInfo(
 /**
  * Map 9Router model info into an OpenCode model config fragment.
  * Only present capabilities are copied; limit fields are validated as
- * positive integers before being assigned.
+ * positive integers and emitted only as a complete context+output pair,
+ * which OpenCode's config schema requires.
  */
 export function mapRouterCapabilities(info: RouterModelInfo): Partial<ModelConfig> {
   const config: Partial<ModelConfig> = {};
@@ -113,12 +114,17 @@ export function mapRouterCapabilities(info: RouterModelInfo): Partial<ModelConfi
   // is computed from `limit.context`; without it, the UI always shows 0%
   // used. 9Router exposes these both nested under `capabilities` and as
   // top-level `context_length` / `max_completion_tokens` fields.
+  //
+  // OpenCode's config schema requires BOTH `limit.context` and `limit.output`
+  // whenever `limit` is present, so a context-only limit is rejected at config
+  // load. Image models (e.g. flux-kontext-max) report `output: 0`, which
+  // toPositiveInt rejects; emit a limit only when both bounds are valid.
   const contextWindow = info.capabilities?.contextWindow ?? info.context_length;
   const context = toPositiveInt(contextWindow);
-  if (context !== undefined) {
-    const maxOutput = info.capabilities?.maxOutput ?? info.max_completion_tokens;
-    const output = toPositiveInt(maxOutput);
-    config.limit = output !== undefined ? { context, output } : { context };
+  const maxOutput = info.capabilities?.maxOutput ?? info.max_completion_tokens;
+  const output = toPositiveInt(maxOutput);
+  if (context !== undefined && output !== undefined) {
+    config.limit = { context, output };
   }
 
   return config;

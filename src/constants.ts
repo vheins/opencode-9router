@@ -103,7 +103,7 @@ export const COMBO_REASONING_EFFORTS = [
  * Discovery cache format version. Bumped whenever the stored model config
  * shape changes so stale entries are refetched instead of served as-is.
  */
-export const DISCOVERY_CACHE_VERSION = 2;
+export const DISCOVERY_CACHE_VERSION = 3;
 
 /** Known provider prefixes in 9Router model IDs for human-readable naming. */
 export const KNOWN_PROVIDER_PREFIXES: Record<string, string> = {

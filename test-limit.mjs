@@ -86,12 +86,13 @@ for (const info of invalidInfos) {
   const config = mapRouterCapabilities(info);
   assert.equal(config.limit, undefined, `limit should be unset for ${JSON.stringify(info)}`);
 }
-// Valid context with invalid output → context kept, output dropped
+// Valid context with invalid output → no limit, because OpenCode's config
+// schema rejects a partial limit (context without output).
 const partial = mapRouterCapabilities({
   id: "m",
   capabilities: { contextWindow: 100000, maxOutput: 0 },
 });
-assert.deepEqual(partial.limit, { context: 100000 }, "valid context with invalid output should keep context only");
+assert.equal(partial.limit, undefined, "valid context with invalid output must not emit a partial limit");
 console.log("PASS");
 
 console.log("\n=== Test 7: models.dev catalog limits flow via findModelsDevMatch ===");
