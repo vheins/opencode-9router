@@ -4,7 +4,11 @@ Plugin provider OpenCode untuk [9Router](https://github.com/decolua/9router) —
 
 Mendaftarkan 9Router sebagai custom provider di OpenCode dengan auto-discovery model.
 
+> **Dukungan Ganda V1 + V2.** Paket ini menyediakan satu entrypoint yang bekerja di **OpenCode V1** (via hook `server` V1, OpenCode `1.18.29`+) maupun **OpenCode V2** (via API `Plugin.define({ id, setup })`). Core discovery dipakai bersama; hanya entrypoint plugin yang berbeda. Tidak perlu paket terpisah.
+
 ## Mulai Cepat
+
+### OpenCode V1
 
 ```json
 {
@@ -17,6 +21,35 @@ Mendaftarkan 9Router sebagai custom provider di OpenCode dengan auto-discovery m
 2. Restart OpenCode
 3. `/models` → pilih model 9Router
 
+### OpenCode V2
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["@vheins/opencode-9router@latest"]
+}
+```
+
+Atau dengan opsi plugin (bentuk objek):
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    {
+      "package": "@vheins/opencode-9router@latest",
+      "options": {
+        "baseURL": "http://localhost:20128",
+        "apiKey": "{env:ROUTER_API_KEY}",
+        "cache": true,
+        "cacheTTL": 10800000,
+        "discoveryTimeout": 30000
+      }
+    }
+  ]
+}
+```
+
 Plugin akan otomatis mendeteksi model dari `http://localhost:20128` (default).
 
 ## Fitur
@@ -27,8 +60,86 @@ Plugin akan otomatis mendeteksi model dari `http://localhost:20128` (default).
 - **Timeout bisa diatur** — Timeout discovery default 30 detik, bisa disesuaikan untuk backend lambat
 - **Daftar model dinamis** — Semua model dari 9Router tersedia, termasuk combo kustom
 - **Default multimodal combo** — Model combo (`owned_by: "combo"`) yang tidak memberikan info kemampuan dipaksa menerima input teks/gambar/audio dengan tool calling, reasoning, konteks 256K, output 128K, dan varian `low`/`medium`/`high`/`xhigh`/`max`/`minimal`/`thinking`
-- **Kompatibel dengan OpenAI** — Menggunakan `@ai-sdk/openai-compatible`
-- **Type-safe** — Menggunakan hook `config` untuk registrasi provider yang sesuai dengan skema konfigurasi OpenCode
+- **Kompatibel dengan OpenAI** — Menggunakan `@ai-sdk/openai-compatible` (V1) / `@opencode/ai/providers/openai-compatible` (V2)
+- **Type-safe** — Menggunakan hook `config` (V1) / provider transform (V2) untuk registrasi provider yang sesuai dengan skema konfigurasi OpenCode
+
+## OpenCode V2
+
+OpenCode V2 menggantikan key config `plugin` dengan `plugins` dan bentuk plugin satu-fungsi dengan `Plugin.define({ id, setup })`. Paket ini menangani keduanya — entrypoint yang sama dimuat oleh V1 dan V2.
+
+### Konfigurasi (V2)
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["@vheins/opencode-9router@latest"]
+}
+```
+
+Opsi plugin memakai bentuk objek (`{ "package": ..., "options": { ... } }`) dan dibaca dari `ctx.options`:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    {
+      "package": "@vheins/opencode-9router@latest",
+      "options": {
+        "baseURL": "http://localhost:20128",
+        "apiKey": "{env:ROUTER_API_KEY}",
+        "cache": true,
+        "cacheTTL": 10800000,
+        "discoveryTimeout": 30000
+      }
+    }
+  ]
+}
+```
+
+### Provider (V2)
+
+Di V2, provider dideklarasikan di bawah key `providers`. Setiap provider 9router memakai paket runtime OpenAI-compatible dan menyimpan endpoint di `settings.baseURL`. Plugin mendeteksi model untuk setiap provider yang ID-nya diawali `9router` lalu mengisi daftar model.
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["@vheins/opencode-9router@latest"],
+  "providers": {
+    "9router": {
+      "name": "9Router",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "baseURL": "http://localhost:20128/v1",
+        "apiKey": "{env:ROUTER_API_KEY}"
+      }
+    },
+    "9router-remote": {
+      "name": "Remote 9Router",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "baseURL": "https://your-9router-endpoint.example.com/v1"
+      }
+    }
+  }
+}
+```
+
+Jika tidak ada provider 9router, plugin mendaftarkan provider default `9router` menuju `http://localhost:20128`. Refresh latar belakang mendeteksi ulang model dan memanggil `ctx.provider.reload()` setiap 5 menit; interval dibersihkan saat plugin di-unload.
+
+### Entrypoint Ganda V1 + V2
+
+Default export menyediakan kedua implementasi:
+
+```ts
+import { Plugin } from "@opencode/plugin"
+import { NineRouterPlugin } from "./plugin.js"   // V1
+import { nineRouterV2 } from "./v2.js"           // V2
+
+export default { ...Plugin.define(nineRouterV2), server: NineRouterPlugin }
+export { NineRouterPlugin }
+```
+
+V2 membaca `id`/`setup`; V1 (1.18.29+) membaca `server`. Named export `NineRouterPlugin` dipertahankan untuk V1 lama.
 
 ## Instalasi
 
@@ -215,6 +326,14 @@ File cache disimpan di `~/.cache/opencode-9router/discovery-{base64url}.json`, s
 
 ## Catatan Rilis
 
+### v0.9.0 — Dukungan OpenCode V2 (ganda V1 + V2)
+- Tambah plugin V2 (`src/v2.ts`) dengan `Plugin.define({ id: "9router", setup })`, mendaftarkan provider/model melalui `ctx.provider.transform(...)` dan refresh via `ctx.provider.reload()`
+- Tambah `src/v2-map.ts` yang memetakan `ModelConfig` hasil discovery ke `Model.Info` V2 (capabilities, `limit.context`/`limit.output` wajib, variants)
+- Tambah entrypoint ganda `src/index.ts`: default export menggabungkan definisi V2 dengan `server: NineRouterPlugin` (V1 1.18.29+); named export `NineRouterPlugin` dipertahankan untuk V1 lama
+- Entry paket (`exports`, `main`, `types`) kini mengarah ke `dist/index.js` / `dist/index.d.ts`
+- `@opencode/plugin@^2.0.12` ditambahkan sebagai dependency runtime; `@opencode-ai/plugin` / `@opencode-ai/sdk` dipertahankan untuk tipe V1
+- Perilaku V1 tidak berubah; algoritma discovery/capability/cache tidak disentuh
+
 ### v0.8.1 — Enrichment combo ketat
 - Combo dianggap ter-enrich hanya bila match segmen models.dev **persis** (tidak lagi cocok substring longgar seperti `vision` → `gpt-4-turbo-vision`)
 - Abaikan stub kemampuan `/models/info` (`{tools: true}`) untuk combo, sehingga backend yang membalas stub tetap mendapat default multimodal
@@ -284,7 +403,10 @@ git push --follow-tags
 ```
 opencode-9router/
   src/
-    plugin.ts         # Entry plugin (registrasi provider + config hook)
+    index.ts          # Entry paket ganda V1 + V2
+    plugin.ts         # Entry plugin V1 (registrasi provider + config hook)
+    v2.ts             # Entry plugin V2 (Plugin.define + provider transform)
+    v2-map.ts         # Pemetaan ModelConfig V1 → Model.Info V2
     discovery.ts      # Pipeline discovery model
     capabilities.ts   # Resolusi kapabilitas (katalog + per-model API)
     cache.ts          # Cache discovery + models.dev

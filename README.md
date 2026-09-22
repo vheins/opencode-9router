@@ -4,7 +4,11 @@ OpenCode plugin provider for [9Router](https://github.com/decolua/9router) — F
 
 Registers 9Router as a custom provider in OpenCode with auto-discovery of models.
 
+> **Dual V1 + V2 support.** This package ships a single entrypoint that works on both **OpenCode V1** (via the V1 `server` hook, OpenCode `1.18.29`+) and **OpenCode V2** (via the V2 `Plugin.define({ id, setup })` API). The discovery core is shared; only the plugin entrypoint differs. No separate package is needed.
+
 ## Quick Start
+
+### OpenCode V1
 
 ```json
 {
@@ -17,6 +21,35 @@ Registers 9Router as a custom provider in OpenCode with auto-discovery of models
 2. Restart OpenCode
 3. `/models` → select a 9Router model
 
+### OpenCode V2
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["@vheins/opencode-9router@latest"]
+}
+```
+
+Or with plugin options (object form):
+
+```json
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    {
+      "package": "@vheins/opencode-9router@latest",
+      "options": {
+        "baseURL": "http://localhost:20128",
+        "apiKey": "{env:ROUTER_API_KEY}",
+        "cache": true,
+        "cacheTTL": 10800000,
+        "discoveryTimeout": 30000
+      }
+    }
+  ]
+}
+```
+
 The plugin will auto-discover models from `http://localhost:20128` (default).
 
 ## Features
@@ -27,8 +60,86 @@ The plugin will auto-discover models from `http://localhost:20128` (default).
 - **Configurable timeout** — Adjustable discovery timeout (default 30s) for slow backends
 - **Dynamic model list** — All models from 9Router are available, including custom combos
 - **Combo multimodal defaults** — Combo models (`owned_by: "combo"`) that expose no capability info are forced to accept text/image/audio input with tool calling, reasoning, 256K context, 128K output, and `low`/`medium`/`high`/`xhigh`/`max`/`minimal`/`thinking` variants
-- **OpenAI-compatible** — Uses `@ai-sdk/openai-compatible`
-- **Type-safe** — Uses the `config` hook for provider registration that conforms to the OpenCode config schema
+- **OpenAI-compatible** — Uses `@ai-sdk/openai-compatible` (V1) / `@opencode/ai/providers/openai-compatible` (V2)
+- **Type-safe** — Uses the `config` hook (V1) / provider transforms (V2) for provider registration that conforms to the OpenCode config schema
+
+## OpenCode V2
+
+OpenCode V2 replaces the V1 `plugin` config key with `plugins` and the single-function plugin shape with `Plugin.define({ id, setup })`. This package handles both — the same published entrypoint is loaded by V1 and V2.
+
+### Configure (V2)
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["@vheins/opencode-9router@latest"]
+}
+```
+
+Plugin options use the object form (`{ "package": ..., "options": { ... } }`) and are read from `ctx.options`:
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": [
+    {
+      "package": "@vheins/opencode-9router@latest",
+      "options": {
+        "baseURL": "http://localhost:20128",
+        "apiKey": "{env:ROUTER_API_KEY}",
+        "cache": true,
+        "cacheTTL": 10800000,
+        "discoveryTimeout": 30000
+      }
+    }
+  ]
+}
+```
+
+### Providers (V2)
+
+In V2, providers are declared under the `providers` key. Each 9router-family provider uses the OpenAI-compatible runtime package and carries the endpoint in `settings.baseURL`. The plugin discovers models for every provider whose ID starts with `9router` and fills in the model list.
+
+```jsonc
+{
+  "$schema": "https://opencode.ai/config.json",
+  "plugins": ["@vheins/opencode-9router@latest"],
+  "providers": {
+    "9router": {
+      "name": "9Router",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "baseURL": "http://localhost:20128/v1",
+        "apiKey": "{env:ROUTER_API_KEY}"
+      }
+    },
+    "9router-remote": {
+      "name": "Remote 9Router",
+      "package": "@opencode/ai/providers/openai-compatible",
+      "settings": {
+        "baseURL": "https://your-9router-endpoint.example.com/v1"
+      }
+    }
+  }
+}
+```
+
+If no 9router-family provider exists, the plugin registers a default `9router` provider pointing at `http://localhost:20128`. A background refresh re-discovers models and calls `ctx.provider.reload()` every 5 minutes; the discovery interval is cleaned up when the plugin unloads.
+
+### Dual V1 + V2 entrypoint
+
+The default export exposes both implementations:
+
+```ts
+import { Plugin } from "@opencode/plugin"
+import { NineRouterPlugin } from "./plugin.js"   // V1
+import { nineRouterV2 } from "./v2.js"           // V2
+
+export default { ...Plugin.define(nineRouterV2), server: NineRouterPlugin }
+export { NineRouterPlugin }
+```
+
+V2 reads `id`/`setup`; V1 (1.18.29+) reads `server`. The named `NineRouterPlugin` export is kept for older V1 consumers.
 
 ## Installation
 
@@ -215,6 +326,14 @@ Cache files are stored at `~/.cache/opencode-9router/discovery-{base64url}.json`
 
 ## Changelog
 
+### v0.9.0 — OpenCode V2 support (dual V1 + V2)
+- Add a V2 plugin (`src/v2.ts`) built with `Plugin.define({ id: "9router", setup })`, registering providers/models through `ctx.provider.transform(...)` and refreshing via `ctx.provider.reload()`
+- Add `src/v2-map.ts` mapping the discovered `ModelConfig` onto V2 `Model.Info` (capabilities, required `limit.context`/`limit.output`, variants)
+- Add `src/index.ts` dual entrypoint: default export merges the V2 definition with `server: NineRouterPlugin` (V1 1.18.29+); named `NineRouterPlugin` export retained for older V1
+- Package entry (`exports`, `main`, `types`) now points at `dist/index.js` / `dist/index.d.ts`
+- `@opencode/plugin@^2.0.12` added as a runtime dependency; `@opencode-ai/plugin` / `@opencode-ai/sdk` kept for V1 types
+- V1 behavior unchanged; discovery/capability/cache algorithms untouched
+
 ### v0.8.1 — Strict combo enrichment
 - Combos count as enriched only on an **exact** models.dev segment match (no more loose substring hits like `vision` → `gpt-4-turbo-vision`)
 - Ignore bare `/models/info` capability stubs (`{tools: true}`) for combos, so backends that return stubs still get forced multimodal defaults
@@ -284,7 +403,10 @@ git push --follow-tags
 ```
 opencode-9router/
   src/
-    plugin.ts         # Plugin entry (provider registration + config hook)
+    index.ts          # Dual V1 + V2 package entry
+    plugin.ts         # V1 plugin entry (provider registration + config hook)
+    v2.ts             # V2 plugin entry (Plugin.define + provider transform)
+    v2-map.ts         # V1 ModelConfig → V2 Model.Info mapping
     discovery.ts      # Model discovery pipeline
     capabilities.ts   # Capability resolution (catalog + per-model API)
     cache.ts          # Discovery + models.dev cache
