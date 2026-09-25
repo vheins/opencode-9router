@@ -443,6 +443,9 @@ opencode-9router/
 
 - [local-memory-mcp](https://github.com/vheins/local-memory-mcp) — A lightweight MCP server that gives AI agents persistent memory with semantic search, backed by SQLite. Local-first, with domain-based context isolation and no external database. Available on [npm](https://www.npmjs.com/package/@vheins/local-memory-mcp).
 
+- [RustaSea framework](https://github.com/rustasea/framework) — An expressive, Laravel-inspired web framework for Rust, with Rust-native safety, performance, and concurrency.
+- [RustaSea skeleton](https://github.com/rustasea/rustasea) — The RustaSea application skeleton (Blade variant), scaffolded with `cargo rustasea new`.
+
 ## Links
 
 - [OpenCode Plugin Docs](https://opencode.ai/docs/plugins/)
