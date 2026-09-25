@@ -439,6 +439,10 @@ opencode-9router/
   LICENSE             # MIT
 ```
 
+## Related Projects
+
+- [local-memory-mcp](https://github.com/vheins/local-memory-mcp) — A lightweight MCP server that gives AI agents persistent memory with semantic search, backed by SQLite. Local-first, with domain-based context isolation and no external database. Available on [npm](https://www.npmjs.com/package/@vheins/local-memory-mcp).
+
 ## Links
 
 - [OpenCode Plugin Docs](https://opencode.ai/docs/plugins/)

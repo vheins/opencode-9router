@@ -439,6 +439,10 @@ opencode-9router/
   LICENSE             # MIT
 ```
 
+## Proyek Terkait
+
+- [local-memory-mcp](https://github.com/vheins/local-memory-mcp) — Server MCP ringan yang memberi agen AI memori persisten dengan pencarian semantik, berbasis SQLite. Local-first, isolasi konteks per domain, tanpa database eksternal. Tersedia di [npm](https://www.npmjs.com/package/@vheins/local-memory-mcp).
+
 ## Tautan
 
 - [Dokumentasi Plugin OpenCode](https://opencode.ai/docs/plugins/)
