@@ -76,6 +76,16 @@ OpenCode V2 replaces the V1 `plugin` config key with `plugins` and the single-fu
 }
 ```
 
+For a local checkout, keep the directory path in the V2 `plugins` list:
+
+```jsonc
+{
+  "plugins": ["/absolute/path/to/opencode-9router"]
+}
+```
+
+The local directory must expose a root `server` entrypoint; this repository provides `server.js` for that purpose. The V1 configuration key remains `plugin` and can continue to use the published package name as shown above.
+
 Plugin options use the object form (`{ "package": ..., "options": { ... } }`) and are read from `ctx.options`:
 
 ```jsonc
@@ -135,11 +145,12 @@ import { Plugin } from "@opencode/plugin"
 import { NineRouterPlugin } from "./plugin.js"   // V1
 import { nineRouterV2 } from "./v2.js"           // V2
 
-export default { ...Plugin.define(nineRouterV2), server: NineRouterPlugin }
+const v2 = Plugin.define(nineRouterV2)
+export default { id: v2.id, setup: v2.setup, server: NineRouterPlugin }
 export { NineRouterPlugin }
 ```
 
-V2 reads `id`/`setup`; V1 (1.18.29+) reads `server`. The named `NineRouterPlugin` export is kept for older V1 consumers.
+V2 reads `id`/`setup`; V1 (1.18.29+) reads `server`. The named `NineRouterPlugin` export is kept for older V1 consumers. For local development, the repository also includes a root `server.js` bridge because OpenCode resolves an absolute plugin directory through its `server` entrypoint. The published package exposes the same entry through the `./server` export.
 
 ## Installation
 
@@ -325,6 +336,13 @@ Provider appears in /models
 Cache files are stored at `~/.cache/opencode-9router/discovery-{base64url}.json`, one per unique `baseURL`. The cache directory also stores the models.dev capability catalog (`models-dev.json`).
 
 ## Changelog
+
+### v0.9.1 — V2 model registration for configured providers
+- Fix V2 plugin setup ordering: external plugins run before OpenCode's internal config-provider plugin, so config-defined `9router*` providers are not visible during setup
+- Register a model transform (`ctx.model.transform`) that injects the discovered inventory into providers once they become available
+- Refresh targets after setup with bounded retries and `provider.updated` events, then `ctx.model.reload()`
+- Add a root `server.js` entrypoint and `./server` package export so an absolute local plugin path resolves
+- Add `test-v2.mjs` covering the package entrypoint and the late config-provider lifecycle
 
 ### v0.9.0 — OpenCode V2 support (dual V1 + V2)
 - Add a V2 plugin (`src/v2.ts`) built with `Plugin.define({ id: "9router", setup })`, registering providers/models through `ctx.provider.transform(...)` and refreshing via `ctx.provider.reload()`

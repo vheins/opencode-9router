@@ -76,6 +76,16 @@ OpenCode V2 menggantikan key config `plugin` dengan `plugins` dan bentuk plugin 
 }
 ```
 
+Untuk checkout lokal, pertahankan path direktori pada list V2 `plugins`:
+
+```jsonc
+{
+  "plugins": ["/absolute/path/to/opencode-9router"]
+}
+```
+
+Direktori lokal harus memiliki entrypoint `server` di root; repository ini menyediakan `server.js` untuk keperluan tersebut. Key konfigurasi V1 tetap `plugin` dan tetap dapat memakai nama paket yang dipublikasikan seperti contoh di atas.
+
 Opsi plugin memakai bentuk objek (`{ "package": ..., "options": { ... } }`) dan dibaca dari `ctx.options`:
 
 ```jsonc
@@ -135,11 +145,12 @@ import { Plugin } from "@opencode/plugin"
 import { NineRouterPlugin } from "./plugin.js"   // V1
 import { nineRouterV2 } from "./v2.js"           // V2
 
-export default { ...Plugin.define(nineRouterV2), server: NineRouterPlugin }
+const v2 = Plugin.define(nineRouterV2)
+export default { id: v2.id, setup: v2.setup, server: NineRouterPlugin }
 export { NineRouterPlugin }
 ```
 
-V2 membaca `id`/`setup`; V1 (1.18.29+) membaca `server`. Named export `NineRouterPlugin` dipertahankan untuk V1 lama.
+V2 membaca `id`/`setup`; V1 (1.18.29+) membaca `server`. Named export `NineRouterPlugin` dipertahankan untuk V1 lama. Untuk pengembangan lokal, repository juga menyediakan bridge `server.js` di root karena OpenCode me-resolve direktori plugin absolut melalui entrypoint `server`. Paket yang dipublikasikan mengekspos entrypoint yang sama melalui export `./server`.
 
 ## Instalasi
 
@@ -325,6 +336,13 @@ Provider muncul di /models
 File cache disimpan di `~/.cache/opencode-9router/discovery-{base64url}.json`, satu file per `baseURL` unik. Direktori cache juga menyimpan katalog kemampuan models.dev (`models-dev.json`).
 
 ## Catatan Rilis
+
+### v0.9.1 — Registrasi model V2 untuk provider terkonfigurasi
+- Perbaiki urutan setup plugin V2: plugin eksternal berjalan sebelum plugin provider bawaan OpenCode, sehingga provider `9router*` dari config belum terlihat saat setup
+- Daftarkan model transform (`ctx.model.transform`) yang menyuntikkan inventaris hasil discovery ke provider begitu provider tersedia
+- Refresh target setelah setup dengan retry terbatas dan event `provider.updated`, lalu `ctx.model.reload()`
+- Tambah entrypoint root `server.js` dan export paket `./server` agar path plugin lokal absolut bisa di-resolve
+- Tambah `test-v2.mjs` untuk menguji entrypoint paket dan siklus provider-config yang datang belakangan
 
 ### v0.9.0 — Dukungan OpenCode V2 (ganda V1 + V2)
 - Tambah plugin V2 (`src/v2.ts`) dengan `Plugin.define({ id: "9router", setup })`, mendaftarkan provider/model melalui `ctx.provider.transform(...)` dan refresh via `ctx.provider.reload()`
