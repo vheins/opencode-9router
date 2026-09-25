@@ -19,6 +19,9 @@ export const OPENAI_COMPATIBLE_PACKAGE = "@opencode/ai/providers/openai-compatib
 /** How often captured discovery data is refreshed and replayed. */
 export const REFRESH_INTERVAL = 5 * 60 * 1000;
 
+/** Bounded retries for config providers registered after external plugin setup. */
+export const CONFIG_PROVIDER_RETRY_DELAYS = [0, 100, 500, 1500, 5000] as const;
+
 /** Minimal view of a listed provider record (unbranded ids from the client). */
 interface ExistingProvider {
   id: string;
@@ -46,16 +49,88 @@ interface CapturedProvider {
 
 // ── Coercion helpers ────────────────────────────────────────
 
+/** Coerce an unknown value to a non-empty string when possible. */
 function asString(value: unknown): string | undefined {
   return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
+/** Coerce an unknown value to a finite number when possible. */
 function asNumber(value: unknown): number | undefined {
   return typeof value === "number" && Number.isFinite(value) ? value : undefined;
 }
 
+/** Coerce an unknown value to a boolean when possible. */
 function asBoolean(value: unknown): boolean | undefined {
   return typeof value === "boolean" ? value : undefined;
+}
+
+/** Check whether a value is a non-null object with string keys. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null;
+}
+
+/** Extract a provider target from a V2 ProviderRecord or a legacy record. */
+function toExistingProvider(value: unknown): ExistingProvider | undefined {
+  if (!isRecord(value)) {
+    return undefined;
+  }
+
+  const provider = isRecord(value.provider) ? value.provider : value;
+  const id = asString(provider.id);
+  if (!id) {
+    return undefined;
+  }
+
+  return {
+    id,
+    name: asString(provider.name) ?? id,
+    settings: isRecord(provider.settings) ? provider.settings : undefined,
+  };
+}
+
+/** Normalize provider list results across supported OpenCode API shapes. */
+function normalizeProviderList(value: unknown): ExistingProvider[] {
+  const entries: readonly unknown[] = Array.isArray(value)
+    ? value
+    : isRecord(value) && Array.isArray(value.data)
+      ? value.data
+      : [];
+
+  return entries
+    .map(toExistingProvider)
+    .filter((provider): provider is ExistingProvider => provider !== undefined);
+}
+
+/** Extract the ids of providers visible to a synchronous editor transform. */
+function providerIDsFromRecords(records: readonly unknown[]): Set<string> {
+  return new Set(normalizeProviderList(records).map((provider) => provider.id));
+}
+
+/**
+ * Build a secret-free fingerprint of the captured provider inventory. Used to
+ * decide whether a provider reload is required; model-only changes are handled
+ * by the model transform instead.
+ */
+function providerFingerprint(providers: readonly CapturedProvider[]): string {
+  return providers
+    .map((provider) => {
+      const settings = provider.info.settings as Record<string, unknown> | undefined;
+      const baseURL = asString(settings?.baseURL) ?? "";
+      const modelIDs = provider.models
+        .map((model) => String(model.id))
+        .sort()
+        .join(",");
+      return [
+        provider.key,
+        provider.info.name,
+        provider.info.package,
+        provider.info.activation,
+        baseURL,
+        modelIDs,
+      ].join(":");
+    })
+    .sort()
+    .join("|");
 }
 
 // ── Target resolution ───────────────────────────────────────
@@ -150,8 +225,8 @@ function buildProviderInfo(
 
 /**
  * OpenCode V2 plugin for 9Router. Discovers models for every 9router-family
- * provider and registers them through a provider transform, refreshing
- * periodically via `ctx.provider.reload()`.
+ * provider, injects them through provider and model transforms, and refreshes
+ * captured inventories as config providers and model lists change.
  */
 export const nineRouterV2: Plugin.Plugin = Plugin.define({
   id: PLUGIN_NAME,
@@ -167,24 +242,17 @@ export const nineRouterV2: Plugin.Plugin = Plugin.define({
       }
     };
 
-    // Load existing providers up-front (transform callbacks stay synchronous).
-    let existing: ExistingProvider[] = [];
-    try {
-      const listed = await ctx.provider.list();
-      existing = listed.data.map((provider) => ({
-        id: provider.id,
-        name: provider.name,
-        settings: provider.settings as Record<string, unknown> | undefined,
-      }));
-    } catch {
-      // Provider listing is best-effort; fall back to options/default.
-    }
-
-    const targets = resolveTargets(existing, ctx.options);
-
-    const discoverTargets = async (): Promise<CapturedProvider[]> => {
+    const source: { providers: CapturedProvider[] } = { providers: [] };
+    let disposed = false;
+    let refreshRunning = false;
+    let refreshPending = false;
+    let refreshTask: Promise<void> | undefined;
+    /** Discover and map models for the given resolved targets. */
+    const discoverTargets = async (
+      resolvedTargets: readonly ProviderTarget[],
+    ): Promise<CapturedProvider[]> => {
       const results = await Promise.all(
-        targets.map(async (target): Promise<CapturedProvider> => {
+        resolvedTargets.map(async (target): Promise<CapturedProvider> => {
           const normalizedURL = normalizeBaseURL(target.baseURL);
           const apiURL = ensureAPIPath(normalizedURL);
           const models = await discoverModels(
@@ -222,8 +290,64 @@ export const nineRouterV2: Plugin.Plugin = Plugin.define({
       return results;
     };
 
-    // Captured source: loaded before registration, refreshed on an interval.
-    const source = { providers: await discoverTargets() };
+    /** Re-list providers, rediscover models, and replay the transforms. */
+    const refresh = async (): Promise<void> => {
+      let existing: ExistingProvider[] = [];
+      try {
+        const listed: unknown = await ctx.provider.list();
+        existing = normalizeProviderList(listed);
+      } catch {
+        log(
+          "warn",
+          "[9router-provider] Unable to list existing providers; using options/defaults",
+        );
+      }
+
+      const resolvedTargets = resolveTargets(existing, ctx.options);
+      const nextProviders = await discoverTargets(resolvedTargets);
+      if (disposed) {
+        return;
+      }
+
+      const providerSetChanged =
+        providerFingerprint(source.providers) !== providerFingerprint(nextProviders);
+
+      source.providers = nextProviders;
+      if (providerSetChanged) {
+        await ctx.provider.reload();
+      }
+      await ctx.model.reload();
+    };
+
+    /** Coalesce refresh requests so only one discovery runs at a time. */
+    const scheduleRefresh = (): void => {
+      if (disposed) {
+        return;
+      }
+      refreshPending = true;
+      if (refreshRunning) {
+        return;
+      }
+
+      refreshRunning = true;
+      refreshTask = (async () => {
+        try {
+          while (refreshPending && !disposed) {
+            refreshPending = false;
+            await refresh();
+          }
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          await log("error", `[9router-provider] Refresh failed: ${message}`);
+        }
+      })().finally(() => {
+        refreshRunning = false;
+        refreshTask = undefined;
+        if (refreshPending && !disposed) {
+          scheduleRefresh();
+        }
+      });
+    };
 
     await ctx.provider.transform((editor) => {
       for (const provider of source.providers) {
@@ -246,21 +370,50 @@ export const nineRouterV2: Plugin.Plugin = Plugin.define({
       }
     });
 
-    const refresh = async () => {
-      source.providers = await discoverTargets();
-      await ctx.provider.reload();
-    };
+    await ctx.model.transform((editor) => {
+      const availableProviderIDs = providerIDsFromRecords(editor.provider.list());
+      for (const provider of source.providers) {
+        if (!availableProviderIDs.has(provider.key)) {
+          continue;
+        }
+        for (const model of provider.models) {
+          editor.update(provider.key, model.id, (draft) => {
+            Object.assign(draft, model);
+          });
+        }
+      }
+    });
 
-    const timer = setInterval(() => {
-      refresh().catch((err) => {
-        console.error(
-          `[9router-provider] Refresh failed: ${err instanceof Error ? err.message : String(err)}`,
-        );
-      });
-    }, REFRESH_INTERVAL);
+    const eventAbort = new AbortController();
+    const eventTask = (async () => {
+      try {
+        for await (const event of ctx.event.subscribe({ signal: eventAbort.signal })) {
+          if (event.type === "provider.updated") {
+            scheduleRefresh();
+          }
+        }
+      } catch (error) {
+        if (!disposed) {
+          const message = error instanceof Error ? error.message : String(error);
+          await log("warn", `[9router-provider] Event subscription failed: ${message}`);
+        }
+      }
+    })();
 
-    return () => {
+    const retryTimers = CONFIG_PROVIDER_RETRY_DELAYS.map((delay) =>
+      setTimeout(scheduleRefresh, delay),
+    );
+    const timer = setInterval(scheduleRefresh, REFRESH_INTERVAL);
+
+    return async () => {
+      disposed = true;
+      for (const retryTimer of retryTimers) {
+        clearTimeout(retryTimer);
+      }
       clearInterval(timer);
+      eventAbort.abort();
+      await eventTask;
+      await refreshTask;
     };
   },
 });
