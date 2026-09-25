@@ -41,7 +41,7 @@ const fakeConfig2 = {
     "9router": {
       options: {
         baseURL: "http://localhost:20128",
-        apiKey: "test-key",
+        apiKey: "test",
       },
     },
   },
@@ -55,7 +55,7 @@ assert.equal(
 );
 assert.equal(
   fakeConfig2.provider["9router"].options.apiKey,
-  "test-key",
+  "test",
   "Should preserve apiKey"
 );
 assert.ok(fakeConfig2.provider["9router"].models, "Provider should have models");
