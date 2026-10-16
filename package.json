@@ -51,7 +51,7 @@
     "@opencode-ai/plugin": "^1.0.182",
     "@opencode-ai/sdk": "^1.0.182",
     "@types/node": "^22.0.0",
-    "typescript": "^5.9.3"
+    "typescript": "^7.0.2"
   },
   "overrides": {
     "toml": "^4.2.0"
