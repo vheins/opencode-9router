@@ -41,7 +41,7 @@
   "scripts": {
     "build": "tsc",
     "pretest": "npm run build",
-    "test": "node test-minimal.mjs && node test-limit.mjs && node test-combo.mjs && node test-v2.mjs",
+    "test": "node test-minimal.mjs && node test-limit.mjs && node test-combo.mjs && node test-reasoning.mjs && node test-v2.mjs",
     "prepublishOnly": "npm run build"
   },
   "dependencies": {

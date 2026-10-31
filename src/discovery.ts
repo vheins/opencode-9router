@@ -1,6 +1,6 @@
-import type { ModelConfig } from "./types.js";
+import type { ModelConfig, RouterModelInfo } from "./types.js";
 import { readDiscoveryCache, readStaleDiscoveryCache, writeDiscoveryCache } from "./cache.js";
-import { forceComboConfig, isComboModel, resolveCapabilitiesBatch } from "./capabilities.js";
+import { forceComboConfig, isComboModel, isRealRouterSignal, mapRouterCapabilities, resolveCapabilitiesBatch } from "./capabilities.js";
 import { ensureAPIPath, formatModelName } from "./utils.js";
 
 // ── Model Discovery ─────────────────────────────────────────
@@ -52,7 +52,7 @@ export async function discoverModels(
     log("info", `[discovery] Fetch OK (${response.status}) for ${baseURL}`);
 
     const data = (await response.json()) as {
-      data?: Array<{ id: string; owned_by?: string }>;
+      data?: Array<RouterModelInfo & { owned_by?: string }>;
     };
     if (!data.data || !Array.isArray(data.data) || data.data.length === 0) {
       throw new Error(`Empty or invalid response data from ${apiURL}/models`);
@@ -75,6 +75,15 @@ export async function discoverModels(
       if (models[id]) {
         Object.assign(models[id], caps);
       }
+    }
+
+    // Bulk metadata is endpoint-specific and takes precedence over fallback
+    // enrichment. Keep combo stubs from suppressing the forced defaults.
+    for (const model of data.data) {
+      if (comboIds.has(model.id) && !isRealRouterSignal(model)) continue;
+      const caps = mapRouterCapabilities(model);
+      Object.assign(models[model.id], caps);
+      if (isRealRouterSignal(model)) capabilities[model.id] = caps;
     }
 
     // Default: tool_call is true for API-discovered models

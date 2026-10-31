@@ -95,11 +95,11 @@ export function mapRouterCapabilities(info: RouterModelInfo): Partial<ModelConfi
       config.attachment = true;
       inputModalities.add("image");
     }
-    if (info.capabilities.tools) {
-      config.tool_call = true;
+    if (typeof info.capabilities.tools === "boolean") {
+      config.tool_call = info.capabilities.tools;
     }
-    if (info.capabilities.reasoning) {
-      config.reasoning = true;
+    if (typeof info.capabilities.reasoning === "boolean") {
+      config.reasoning = info.capabilities.reasoning;
     }
     if (info.capabilities.audioInput) {
       inputModalities.add("audio");
@@ -166,8 +166,8 @@ function toRouterModelInfo(entry: ModelsDevEntry): RouterModelInfo {
     id: entry.id,
     capabilities: {
       vision: entry.attachment ?? inputModalities.includes("image"),
-      tools: entry.tool_call ?? false,
-      reasoning: entry.reasoning ?? false,
+      tools: entry.tool_call,
+      reasoning: entry.reasoning,
       audioInput: inputModalities.includes("audio"),
       // models.dev exposes token limits at the entry's top level as
       // limit.context / limit.output. Mirror them onto the capabilities
@@ -230,11 +230,12 @@ export function findModelsDevMatchExact(
 /**
  * Whether a `/models/info` response carries a meaningful capability signal.
  * A bare `tools: true` (the default stub returned by some 9Router backends) is
- * NOT a signal; vision, reasoning, audio input, or a positive token limit are.
+ * NOT a signal; disabled tools, vision, reasoning, audio input, or a positive
+ * token limit are.
  */
 export function isRealRouterSignal(info: RouterModelInfo): boolean {
   const capabilities = info.capabilities;
-  if (capabilities?.vision || capabilities?.reasoning || capabilities?.audioInput) {
+  if (capabilities?.tools === false || capabilities?.vision || capabilities?.reasoning || capabilities?.audioInput) {
     return true;
   }
   return toPositiveInt(capabilities?.contextWindow ?? info.context_length) !== undefined;
