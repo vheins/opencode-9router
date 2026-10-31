@@ -5,8 +5,7 @@ import type { ModelsDevEntry, ReasoningOption } from "./types.js";
 // https://github.com/decolua/9router/blob/89ffac5a2c8108449c432afd1ad6531578fa81cd/src/lib/modelCatalog/sync.js#L22-L40
 // gh additionally comes from alias: "gh" on the github provider:
 // https://github.com/decolua/9router/blob/89ffac5a2c8108449c432afd1ad6531578fa81cd/open-sse/providers/registry/github.js#L1-L5
-// The public API does not expose this mapping. Unknown routes stay unknown;
-// upstream identity aliases do not establish capability parity for every auth mode.
+// Unlisted provider IDs are matched unchanged.
 const CATALOG_PROVIDERS: Record<string, string> = {
   glm: "zai",
   "glm-cn": "zhipuai",

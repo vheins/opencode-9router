@@ -37,15 +37,45 @@ assert.deepEqual(modes("google/gemini-3.8-flash"), effort("low", "medium", "high
 assert.deepEqual(modes("another/vendor/model"), effort("none", "high"));
 assert.deepEqual(modes("doubao/doubao-model"), effort("low", "high"));
 assert.deepEqual(modes("cloudflare-ai/@cf/zai-org/glm-5.3"), effort("low", "high", "max"));
-for (const id of ["unknown/z-ai/glm-5.3-flash", "openrouter/glm-5.3-flash", "openrouter/z-ai/glm-5.3-flash:free", "openrouter/z-ai/glm-5-3-flash", "executor", "openrouter/openrouter/free"]) {
+for (const id of [
+  "unknown/z-ai/glm-5.3-flash",
+  "openrouter/glm-5.3-flash",
+  "openrouter/z-ai/glm-5.3-flash:free",
+  "openrouter/z-ai/glm-5-3-flash",
+  "executor",
+  "openrouter/openrouter/free",
+]) {
   assert.equal(modes(id), undefined, `no invented controls for ${id}`);
 }
-assert.equal(findReasoningOptions("openrouter/z-ai/glm-5.3-flash", [...catalog, catalog.find((e) => e.catalogProvider === "openrouter")]), undefined, "ambiguous exact matches stay unknown");
+assert.equal(
+  findReasoningOptions("openrouter/z-ai/glm-5.3-flash", [
+    ...catalog,
+    catalog.find((e) => e.catalogProvider === "openrouter"),
+  ]),
+  undefined,
+  "ambiguous exact matches stay unknown",
+);
 for (const invalid of [null, {}, [{ type: "effort", values: "high" }], [{ type: "budget_tokens", min: 1024 }]]) {
   assert.equal(findReasoningOptions("test/model", [{ catalogProvider: "test", ...entry("model", invalid) }]), undefined);
 }
-assert.deepEqual(findReasoningOptions("test/model", [{ catalogProvider: "test", ...entry("model", [null, { type: "effort", values: ["high", "high", "default", "ultra", 1, "__proto__"] }]) }]), effort("high"));
-assert.equal(findReasoningOptions("test/model", [{ catalogProvider: "test", ...entry("model", effort("high")), reasoning: false }]), undefined);
+assert.deepEqual(
+  findReasoningOptions("test/model", [{
+    catalogProvider: "test",
+    ...entry("model", [null, {
+      type: "effort",
+      values: ["high", "high", "default", "ultra", 1, "__proto__"],
+    }]),
+  }]),
+  effort("high"),
+);
+assert.equal(
+  findReasoningOptions("test/model", [{
+    catalogProvider: "test",
+    ...entry("model", effort("high")),
+    reasoning: false,
+  }]),
+  undefined,
+);
 
 const info = (options, extra = {}) => toModelInfo("9router", "test/model", { name: "Test", reasoning_options: options, ...extra });
 assert.deepEqual(info(effort("low", "high", "max")).variants, ["low", "high", "max"].map((id) => ({ id, settings: { reasoningEffort: id } })));
@@ -90,7 +120,7 @@ try {
   assert.equal(requests, before, "fresh discovery cache avoids fetches");
   const file = join(temp, "opencode-9router", `discovery-9router-${Buffer.from("https://router.test").toString("base64url")}.json`);
   assert.equal(JSON.parse(await readFile(file, "utf8")).v, DISCOVERY_CACHE_VERSION);
-  assert.ok(DISCOVERY_CACHE_VERSION > 4, "invalidate regressive draft caches too");
+  assert.ok(DISCOVERY_CACHE_VERSION > 4, "reject version 4 discovery caches");
   await writeFile(file, JSON.stringify({ v: 4, models }));
   assert.equal(readDiscoveryCache("https://router.test", 60000, "9router"), null);
   assert.equal(readStaleDiscoveryCache("https://router.test", "9router"), null);
@@ -107,8 +137,11 @@ const { pathToFileURL } = await import("node:url");
 const adapterRequire = createRequire(import.meta.resolve("@opencode/ai"));
 const { Effect, Layer } = await import(pathToFileURL(adapterRequire.resolve("effect")).href);
 let httpModule;
-try { httpModule = adapterRequire.resolve("effect/http"); }
-catch { httpModule = adapterRequire.resolve("effect/unstable/http"); }
+try {
+  httpModule = adapterRequire.resolve("effect/http");
+} catch {
+  httpModule = adapterRequire.resolve("effect/unstable/http");
+}
 const { HttpClientRequest, HttpClientResponse } = await import(pathToFileURL(httpModule).href);
 const { LLM, LLMClient } = await import("@opencode/ai");
 const { model } = await import("@opencode/ai/providers/openai-compatible");
