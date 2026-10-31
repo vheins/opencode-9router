@@ -16,6 +16,10 @@ export type ModelLimits = {
   output?: number;
 };
 
+export type ReasoningOption =
+  | { type: "effort"; values: string[] }
+  | { type: "toggle" };
+
 /** OpenCode model config fragment generated per discovered model. */
 export type ModelConfig = {
   name: string;
@@ -30,6 +34,8 @@ export type ModelConfig = {
   interleaved?: true | { field: "reasoning" | "reasoning_content" | "reasoning_details" };
   limit?: ModelLimits;
   variants?: Record<string, Record<string, unknown>>;
+  /** Validated catalog controls; lowered to V2 overlays, never provider settings. */
+  reasoning_options?: ReasoningOption[];
   search?: boolean;
   context_length?: number;
   max_completion_tokens?: number;
@@ -61,6 +67,8 @@ export interface RouterModelInfo {
  */
 export interface ModelsDevEntry {
   id: string;
+  catalogProvider?: string;
+  reasoning_options?: unknown;
   attachment?: boolean;
   reasoning?: boolean;
   tool_call?: boolean;

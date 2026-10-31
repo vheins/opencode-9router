@@ -59,6 +59,7 @@ The plugin will auto-discover models from `http://localhost:20128` (default).
 - **Stale fallback** — If the backend is unreachable, returns cached models instead of failing
 - **Configurable timeout** — Adjustable discovery timeout (default 30s) for slow backends
 - **Dynamic model list** — All models from 9Router are available, including custom combos
+- **Catalog thinking modes (V2)** — Raw models gain effort/toggle variants from exact provider-qualified models.dev `reasoning_options`. Efforts use `reasoningEffort`; toggles use the router's `enable_thinking` body field. Unknown routes/controls and numeric budgets get no invented modes. Configured variants follow OpenCode's normal override rules; combo variants stay unchanged. No selection leaves upstream defaults untouched. This exposes catalog controls, not a guarantee that 9Router preserves them downstream (including known effort rewriting and toggle-handling limitations).
 - **Combo multimodal defaults** — Combo models (`owned_by: "combo"`) that expose no capability info are forced to accept text/image/audio input with tool calling, reasoning, 256K context, 128K output, and `low`/`medium`/`high`/`xhigh`/`max`/`minimal`/`thinking` variants
 - **OpenAI-compatible** — Uses `@ai-sdk/openai-compatible` (V1) / `@opencode/ai/providers/openai-compatible` (V2)
 - **Type-safe** — Uses the `config` hook (V1) / provider transforms (V2) for provider registration that conforms to the OpenCode config schema

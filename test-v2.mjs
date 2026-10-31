@@ -36,6 +36,7 @@ const { nineRouterV2 } = await import("./dist/v2.js");
 const providerRecords = new Map();
 const providerTransforms = [];
 const modelTransforms = [];
+let candidates = new Map();
 
 const providerEditor = {
   list: () => Array.from(providerRecords.values()),
@@ -43,7 +44,7 @@ const providerEditor = {
   add: ({ info, models }) => {
     providerRecords.set(info.id, {
       provider: info,
-      models: new Map(models.map((model) => [model.id, model])),
+      models: new Map(models.map((model) => [model.id, structuredClone(model)])),
     });
   },
   update: (id, update) => {
@@ -59,7 +60,7 @@ const providerEditor = {
     set: (id, models) => {
       const record = providerRecords.get(id);
       if (record) {
-        record.models = new Map(models.map((model) => [model.id, model]));
+        record.models = new Map(models.map((model) => [model.id, structuredClone(model)]));
       }
     },
     update: (id, modelID, update) => {
@@ -77,14 +78,14 @@ const providerEditor = {
 
 const modelEditor = {
   list: (providerID) =>
-    Array.from(providerRecords.values()).flatMap((record) =>
+    Array.from(candidates.values()).flatMap((record) =>
       providerID && record.provider.id !== providerID
         ? []
         : Array.from(record.models.values()),
     ),
-  get: (providerID, modelID) => providerRecords.get(providerID)?.models.get(modelID),
+  get: (providerID, modelID) => candidates.get(providerID)?.models.get(modelID),
   update: (providerID, modelID, update) => {
-    const record = providerRecords.get(providerID);
+    const record = candidates.get(providerID);
     if (!record) {
       return;
     }
@@ -105,7 +106,7 @@ const modelEditor = {
     update(model);
   },
   remove: (providerID, modelID) => {
-    providerRecords.get(providerID)?.models.delete(modelID);
+    candidates.get(providerID)?.models.delete(modelID);
   },
   default: {
     get: () => undefined,
@@ -118,6 +119,17 @@ const modelEditor = {
 };
 
 const replayModelTransforms = () => {
+  candidates = structuredClone(providerRecords);
+  // Model configuration is applied to owned candidates, never source definitions.
+  const configured = candidates.get("9router-inferhub")?.models.get("vendor/model-a");
+  if (configured) {
+    configured.settings = { custom: true };
+    configured.body = { custom_body: true };
+    configured.variants = [
+      { id: "high", settings: { reasoningEffort: "low" }, body: { custom_variant: true } },
+      { id: "custom", settings: { custom: true } },
+    ];
+  }
   for (const transform of modelTransforms) {
     transform(modelEditor);
   }
@@ -129,7 +141,8 @@ const replayProviderTransforms = () => {
   replayModelTransforms();
 };
 
-const eventSubscribers = [];
+let refreshEvent;
+let effortValues = ["low", "high"];
 const context = {
   options: { cache: false },
   provider: {
@@ -160,6 +173,11 @@ const context = {
         if (!signal?.aborted) {
           yield { type: "provider.updated" };
         }
+        const event = await new Promise((resolve) => {
+          refreshEvent = resolve;
+          signal?.addEventListener("abort", () => resolve(undefined), { once: true });
+        });
+        if (event) yield event;
       },
     }),
   },
@@ -175,7 +193,7 @@ globalThis.fetch = async (input) => {
     });
   }
   if (url.includes("api.json") || url.includes("models.dev")) {
-    return new Response(JSON.stringify({ test: { models: {} } }), {
+    return new Response(JSON.stringify({ vendor: { models: { a: { id: "model-a", reasoning: true, reasoning_options: [{ type: "effort", values: effortValues }] } } } }), {
       status: 200,
       headers: { "content-type": "application/json" },
     });
@@ -222,8 +240,29 @@ try {
     2,
     "late config provider should receive discovered models",
   );
+  assert.equal(modelTransforms.length, 0, "discovery must not overwrite configured model variants");
+  replayProviderTransforms();
+  const configured = candidates.get("9router-inferhub").models.get("vendor/model-a");
+  assert.deepEqual(configured.variants, [
+    { id: "high", settings: { reasoningEffort: "low" }, body: { custom_variant: true } },
+    { id: "custom", settings: { custom: true } },
+  ]);
+  assert.deepEqual(configured.settings, { custom: true });
+  assert.deepEqual(configured.body, { custom_body: true });
+  assert.equal(providerRecords.get("9router-inferhub").models.get("vendor/model-a").settings, undefined, "source models remain unmodified by overrides");
+  const sourceModel = () => providerRecords.get("9router-inferhub").models.get("vendor/model-a");
+  assert.deepEqual(sourceModel().variants.map((v) => v.id), ["low", "high"]);
+  // Force a changed catalog without waiting for its normal TTL.
+  const { rm } = await import("node:fs/promises");
+  await rm(join(process.env.XDG_CACHE_HOME, "opencode-9router", "models-dev.json"));
+  effortValues = ["low", "high", "max"];
+  refreshEvent({ type: "provider.updated" });
+  const refreshDeadline = Date.now() + 2000;
+  while (Date.now() < refreshDeadline && sourceModel().variants.length !== 3) await delay(20);
+  assert.deepEqual(sourceModel().variants.map((v) => v.id), effortValues, "same model IDs refresh changed controls");
+  assert.equal(candidates.get("9router-inferhub").models.get("vendor/model-a").variants[0].settings.reasoningEffort, "low", "configured overrides survive refresh");
   await cleanup();
-  console.log("V2 late config-provider lifecycle checks passed");
+  console.log("V2 late config-provider lifecycle, refresh, and override preservation checks passed");
 } finally {
   globalThis.fetch = originalFetch;
 }

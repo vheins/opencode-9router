@@ -185,11 +185,11 @@ export function flattenModelsDevCatalog(
   raw: Record<string, { models?: Record<string, ModelsDevEntry> }>,
 ): ModelsDevEntry[] {
   const result: ModelsDevEntry[] = [];
-  for (const provider of Object.values(raw)) {
+  for (const [catalogProvider, provider] of Object.entries(raw)) {
     if (!provider?.models) continue;
     for (const entry of Object.values(provider.models)) {
       if (entry?.id) {
-        result.push(entry);
+        result.push({ ...entry, catalogProvider });
       }
     }
   }

@@ -35,16 +35,35 @@ function mapOutputModalities(config: ModelConfig): string[] {
 
 /**
  * Map the V1 `variants` record (`{ low: { reasoningEffort: "low" } }`) into the
- * V2 array shape (`[{ id, settings }]`). Returns an empty array when absent.
+ * V2 array shape (`[{ id, settings }]`). Explicit variants win over catalog controls.
  */
 function mapVariants(config: ModelConfig): Model.Info["variants"] {
-  if (!config.variants) {
-    return [];
+  if (config.variants !== undefined) {
+    return Object.entries(config.variants).map(([id, settings]) => ({
+      id: Model.VariantID.make(id),
+      settings: settings as Model.Settings,
+    }));
   }
-  return Object.entries(config.variants).map(([id, settings]) => ({
-    id: Model.VariantID.make(id),
-    settings: settings as Model.Settings,
-  }));
+  const variants = new Map<string, Model.Info["variants"][number]>();
+  for (const option of config.reasoning_options ?? []) {
+    if (option.type === "effort") {
+      for (const effort of option.values) {
+        variants.set(effort, {
+          id: Model.VariantID.make(effort),
+          settings: { reasoningEffort: effort },
+        });
+      }
+    } else if (option.type === "toggle") {
+      // 9Router captures this boolean before translating to the selected route.
+      for (const [id, enabled] of [["none", false], ["thinking", true]] as const) {
+        if (!variants.has(id)) variants.set(id, {
+          id: Model.VariantID.make(id),
+          body: { enable_thinking: enabled },
+        });
+      }
+    }
+  }
+  return [...variants.values()];
 }
 
 /**
