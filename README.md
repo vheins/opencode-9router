@@ -64,6 +64,12 @@ The plugin will auto-discover models from `http://localhost:20128` (default).
 - **OpenAI-compatible** — Uses `@ai-sdk/openai-compatible` (V1) / `@opencode/ai/providers/openai-compatible` (V2)
 - **Type-safe** — Uses the `config` hook (V1) / provider transforms (V2) for provider registration that conforms to the OpenCode config schema
 
+### Provider identity translation
+
+`src/reasoning.ts` translates 9Router provider IDs to models.dev provider IDs using a subset of 9Router's [`PROVIDER_ALIASES`](https://github.com/decolua/9router/blob/89ffac5a2c8108449c432afd1ad6531578fa81cd/src/lib/modelCatalog/sync.js#L22-L40) at commit `89ffac5a2c8108449c432afd1ad6531578fa81cd` (`hunyuan` is omitted). The additional `gh` route prefix comes from the same revision's [GitHub provider registry](https://github.com/decolua/9router/blob/89ffac5a2c8108449c432afd1ad6531578fa81cd/open-sse/providers/registry/github.js#L1-L5). These are identity aliases, not reasoning-level presets; controls still require an exact full model ID in the matched catalog provider. Identity aliases alone do not establish capability parity across authentication modes, notably Kimi's OAuth and API-key routes.
+
+The public 9Router API does not expose this mapping, and the plugin does not fetch router source code at runtime. This repository has no pinned 9Router checkout, submodule, or vendored source, so offline tests cover plugin behavior, not agreement with upstream. Add a source-comparison test if a pinned upstream source becomes part of the checkout; a duplicate expected table would not independently verify provenance.
+
 ## OpenCode V2
 
 OpenCode V2 replaces the V1 `plugin` config key with `plugins` and the single-function plugin shape with `Plugin.define({ id, setup })`. This package handles both — the same published entrypoint is loaded by V1 and V2.
