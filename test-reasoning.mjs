@@ -80,8 +80,8 @@ assert.equal(
 const info = (options, extra = {}) => toModelInfo("9router", "test/model", { name: "Test", reasoning_options: options, ...extra });
 assert.deepEqual(info(effort("low", "high", "max")).variants, ["low", "high", "max"].map((id) => ({ id, settings: { reasoningEffort: id } })));
 assert.deepEqual(info([{ type: "toggle" }]).variants, [
-  { id: "none", body: { enable_thinking: false } },
-  { id: "thinking", body: { enable_thinking: true } },
+  { id: "none", settings: { reasoningEffort: null }, body: { enable_thinking: false } },
+  { id: "thinking", settings: { reasoningEffort: null }, body: { enable_thinking: true } },
 ]);
 assert.deepEqual(info(effort("high"), { variants: {} }).variants, []);
 assert.deepEqual(info(effort("high"), { variants: { custom: { reasoningEffort: "low" } } }).variants, [{ id: "custom", settings: { reasoningEffort: "low" } }]);
@@ -156,13 +156,15 @@ const executor = Layer.succeed(RequestExecutor.Service, RequestExecutor.Service.
   }),
 }));
 const runtime = LLMClient.layer.pipe(Layer.provide(executor));
-const variants = [...info(effort("low", "high", "max")).variants, ...info([{ type: "toggle" }]).variants, {}];
-for (const variant of variants) {
+async function capture(variant = {}, inherited = {}) {
   await Effect.runPromise(LLM.generate(LLM.request({
-    model: model("catalog-model", { baseURL: "https://capture.invalid/v1", apiKey: "unused", ...variant.settings, body: variant.body }),
+    model: model("catalog-model", { baseURL: "https://capture.invalid/v1", apiKey: "unused", ...inherited, ...variant.settings, body: variant.body }),
     prompt: "ping",
   })).pipe(Effect.provide(runtime)));
+  return captured.at(-1).body;
 }
+const variants = [...info(effort("low", "high", "max")).variants, ...info([{ type: "toggle" }]).variants, {}];
+for (const variant of variants) await capture(variant);
 assert.equal(captured.length, 6);
 for (let i = 0; i < 3; i++) assert.equal(captured[i].body.reasoning_effort, ["low", "high", "max"][i]);
 assert.equal(captured[3].body.enable_thinking, false);
@@ -170,4 +172,17 @@ assert.equal(captured[4].body.enable_thinking, true);
 for (const request of captured) assert.equal(request.url, "https://capture.invalid/v1/chat/completions");
 for (const request of captured.slice(3)) assert.equal("reasoning_effort" in request.body, false);
 assert.equal("reasoning" in captured[5].body, false, "unselected mode preserves upstream defaults");
+const toggles = info([{ type: "toggle" }]).variants;
+for (const inherited of ["high", "none"]) {
+  for (const toggle of toggles) {
+    const body = await capture(toggle, { reasoningEffort: inherited });
+    assert.equal(body.enable_thinking, toggle.id === "thinking");
+    assert.equal("reasoning_effort" in body, false, "selected toggle must suppress inherited effort, not send null");
+  }
+}
+assert.equal((await capture({}, { reasoningEffort: "high" })).reasoning_effort, "high", "unselected mode preserves configured effort");
+const explicit = info([{ type: "toggle" }], { variants: { thinking: { reasoningEffort: "low" } } }).variants[0];
+const explicitBody = await capture(explicit, { reasoningEffort: "high" });
+assert.equal(explicitBody.reasoning_effort, "low", "explicit variant replaces catalog toggle and inherited effort");
+assert.equal("enable_thinking" in explicitBody, false, "catalog toggle must not leak into explicit variant");
 console.log("Reasoning catalog, variants, combos, cache, and captured adapter requests passed");

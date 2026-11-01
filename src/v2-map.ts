@@ -54,10 +54,11 @@ function mapVariants(config: ModelConfig): Model.Info["variants"] {
         });
       }
     } else if (option.type === "toggle") {
-      // 9Router captures this boolean before translating to the selected route.
+      // Clear inherited effort so 9Router honors the toggle instead of that effort.
       for (const [id, enabled] of [["none", false], ["thinking", true]] as const) {
         if (!variants.has(id)) variants.set(id, {
           id: Model.VariantID.make(id),
+          settings: { reasoningEffort: null },
           body: { enable_thinking: enabled },
         });
       }
