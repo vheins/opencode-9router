@@ -10,6 +10,7 @@ import {
 } from "./constants.js";
 import { fetchModelsDevCatalog } from "./cache.js";
 import { toPositiveInt } from "./utils.js";
+import { findReasoningOptions } from "./reasoning.js";
 
 // ── Capability Resolution ──────────────────────────────────
 
@@ -266,13 +267,15 @@ export async function resolveCapabilitiesBatch(
   const pendingIds: string[] = [];
   for (const id of modelIds) {
     const isCombo = comboIds?.has(id) ?? false;
+    const options = !isCombo && catalog ? findReasoningOptions(id, catalog) : undefined;
+    if (options) capabilities[id] = { reasoning: true, reasoning_options: options };
     let resolved = false;
     if (catalog) {
       const match = isCombo
         ? findModelsDevMatchExact(id, catalog)
         : findModelsDevMatch(id, catalog);
       if (match?.capabilities) {
-        capabilities[id] = mapRouterCapabilities(match);
+        capabilities[id] = { ...mapRouterCapabilities(match), ...capabilities[id] };
         resolved = true;
       }
     }
@@ -301,7 +304,7 @@ export async function resolveCapabilitiesBatch(
         if (comboIds?.has(id) && !isRealRouterSignal(result.value)) {
           continue;
         }
-        capabilities[id] = mapRouterCapabilities(result.value);
+        capabilities[id] = { ...mapRouterCapabilities(result.value), ...capabilities[id] };
       }
     }
   }

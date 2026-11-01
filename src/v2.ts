@@ -101,38 +101,6 @@ function normalizeProviderList(value: unknown): ExistingProvider[] {
     .filter((provider): provider is ExistingProvider => provider !== undefined);
 }
 
-/** Extract the ids of providers visible to a synchronous editor transform. */
-function providerIDsFromRecords(records: readonly unknown[]): Set<string> {
-  return new Set(normalizeProviderList(records).map((provider) => provider.id));
-}
-
-/**
- * Build a secret-free fingerprint of the captured provider inventory. Used to
- * decide whether a provider reload is required; model-only changes are handled
- * by the model transform instead.
- */
-function providerFingerprint(providers: readonly CapturedProvider[]): string {
-  return providers
-    .map((provider) => {
-      const settings = provider.info.settings as Record<string, unknown> | undefined;
-      const baseURL = asString(settings?.baseURL) ?? "";
-      const modelIDs = provider.models
-        .map((model) => String(model.id))
-        .sort()
-        .join(",");
-      return [
-        provider.key,
-        provider.info.name,
-        provider.info.package,
-        provider.info.activation,
-        baseURL,
-        modelIDs,
-      ].join(":");
-    })
-    .sort()
-    .join("|");
-}
-
 // ── Target resolution ───────────────────────────────────────
 
 /**
@@ -225,7 +193,7 @@ function buildProviderInfo(
 
 /**
  * OpenCode V2 plugin for 9Router. Discovers models for every 9router-family
- * provider, injects them through provider and model transforms, and refreshes
+ * provider, publishes them as provider source definitions, and refreshes
  * captured inventories as config providers and model lists change.
  */
 export const nineRouterV2: Plugin.Plugin = Plugin.define({
@@ -309,14 +277,20 @@ export const nineRouterV2: Plugin.Plugin = Plugin.define({
         return;
       }
 
-      const providerSetChanged =
-        providerFingerprint(source.providers) !== providerFingerprint(nextProviders);
-
+      // Source variants must refresh too. Never reapply discovery over configured
+      // model overrides; OpenCode merges those after provider source definitions.
+      const previous = source.providers;
+      const changed = JSON.stringify(previous) !== JSON.stringify(nextProviders);
       source.providers = nextProviders;
-      if (providerSetChanged) {
-        await ctx.provider.reload();
+      if (changed) {
+        try {
+          await ctx.provider.reload();
+        } catch (error) {
+          // Retry unchanged discovery after a failed publication.
+          source.providers = previous;
+          throw error;
+        }
       }
-      await ctx.model.reload();
     };
 
     /** Coalesce refresh requests so only one discovery runs at a time. */
@@ -366,20 +340,6 @@ export const nineRouterV2: Plugin.Plugin = Plugin.define({
           editor.models.set(provider.key, provider.models);
         } else {
           editor.add({ info: provider.info, models: provider.models });
-        }
-      }
-    });
-
-    await ctx.model.transform((editor) => {
-      const availableProviderIDs = providerIDsFromRecords(editor.provider.list());
-      for (const provider of source.providers) {
-        if (!availableProviderIDs.has(provider.key)) {
-          continue;
-        }
-        for (const model of provider.models) {
-          editor.update(provider.key, model.id, (draft) => {
-            Object.assign(draft, model);
-          });
         }
       }
     });
