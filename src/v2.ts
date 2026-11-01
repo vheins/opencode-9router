@@ -279,9 +279,18 @@ export const nineRouterV2: Plugin.Plugin = Plugin.define({
 
       // Source variants must refresh too. Never reapply discovery over configured
       // model overrides; OpenCode merges those after provider source definitions.
-      const changed = JSON.stringify(source.providers) !== JSON.stringify(nextProviders);
+      const previous = source.providers;
+      const changed = JSON.stringify(previous) !== JSON.stringify(nextProviders);
       source.providers = nextProviders;
-      if (changed) await ctx.provider.reload();
+      if (changed) {
+        try {
+          await ctx.provider.reload();
+        } catch (error) {
+          // Retry unchanged discovery after a failed publication.
+          source.providers = previous;
+          throw error;
+        }
+      }
     };
 
     /** Coalesce refresh requests so only one discovery runs at a time. */

@@ -3,6 +3,7 @@ import { mkdtemp, readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { mergeProviderOptions as mergeOverlay } from "@opencode/ai";
 
 const packageJson = JSON.parse(await readFile(new URL("./package.json", import.meta.url), "utf8"));
 const require = createRequire(import.meta.url);
@@ -118,20 +119,28 @@ const modelEditor = {
   },
 };
 
+// Model the relevant OpenCode 2.1.4 config overlay seam, not array replacement:
+// 68bc26b7da1990ce10ffecfbc1e09eb13aa5d824, packages/core/src/config/plugin/provider.ts.
+// This is a bounded host-semantics model, not execution of OpenCode core.
+const configuredVariants = [
+  { id: "high", settings: { reasoningEffort: "low" }, body: { custom_variant: true } },
+  { id: "thinking", settings: { reasoningEffort: "high" } },
+  { id: "custom", settings: { custom: true } },
+];
 const replayModelTransforms = () => {
   candidates = structuredClone(providerRecords);
-  // Model configuration is applied to owned candidates, never source definitions.
+  for (const transform of modelTransforms) transform(modelEditor);
   const configured = candidates.get("9router-inferhub")?.models.get("vendor/model-a");
   if (configured) {
-    configured.settings = { custom: true };
-    configured.body = { custom_body: true };
-    configured.variants = [
-      { id: "high", settings: { reasoningEffort: "low" }, body: { custom_variant: true } },
-      { id: "custom", settings: { custom: true } },
-    ];
-  }
-  for (const transform of modelTransforms) {
-    transform(modelEditor);
+    configured.settings = mergeOverlay(configured.settings, { custom: true });
+    configured.body = mergeOverlay(configured.body, { custom_body: true });
+    for (const variant of configuredVariants) {
+      let existing = configured.variants.find((item) => item.id === variant.id);
+      if (!existing) configured.variants.push(existing = { id: variant.id });
+      for (const key of ["settings", "body"]) {
+        if (variant[key] !== undefined) existing[key] = mergeOverlay(existing[key], variant[key]);
+      }
+    }
   }
 };
 const replayProviderTransforms = () => {
@@ -143,6 +152,14 @@ const replayProviderTransforms = () => {
 
 let refreshEvent;
 let effortValues = ["low", "high"];
+let reloadAttempts = 0;
+let reloadFailures = 0;
+let refreshFailures = 0;
+const originalError = console.error;
+console.error = (...args) => {
+  if (args.some((arg) => String(arg).includes("Refresh failed: synthetic reload failure"))) refreshFailures++;
+  else originalError(...args);
+};
 const context = {
   options: { cache: false },
   provider: {
@@ -153,6 +170,11 @@ const context = {
       return { dispose: () => undefined };
     },
     reload: async () => {
+      reloadAttempts++;
+      if (reloadFailures > 0) {
+        reloadFailures--;
+        throw new Error("synthetic reload failure");
+      }
       replayProviderTransforms();
     },
   },
@@ -173,11 +195,15 @@ const context = {
         if (!signal?.aborted) {
           yield { type: "provider.updated" };
         }
-        const event = await new Promise((resolve) => {
-          refreshEvent = resolve;
-          signal?.addEventListener("abort", () => resolve(undefined), { once: true });
-        });
-        if (event) yield event;
+        while (!signal?.aborted) {
+          const event = await new Promise((resolve) => {
+            refreshEvent = resolve;
+            signal?.addEventListener("abort", () => resolve(undefined), { once: true });
+          });
+          refreshEvent = undefined;
+          if (!event) return;
+          yield event;
+        }
       },
     }),
   },
@@ -199,7 +225,7 @@ globalThis.fetch = async (input) => {
           a: {
             id: "model-a",
             reasoning: true,
-            reasoning_options: [{ type: "effort", values: effortValues }],
+            reasoning_options: [{ type: "effort", values: effortValues }, { type: "toggle" }],
           },
         },
       },
@@ -220,9 +246,18 @@ globalThis.fetch = async (input) => {
 };
 
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
-
+async function until(predicate, message) {
+  const deadline = Date.now() + 2000;
+  while (!predicate() && Date.now() < deadline) await delay(10);
+  assert.ok(predicate(), message);
+}
+async function requestRefresh() {
+  await until(() => refreshEvent !== undefined, "refresh event subscriber ready");
+  refreshEvent({ type: "provider.updated" });
+}
+let cleanup;
 try {
-  const cleanup = await nineRouterV2.setup(context);
+  cleanup = await nineRouterV2.setup(context);
   await delay(10);
 
   // Simulate ConfigProviderPlugin registering a configured provider late.
@@ -254,35 +289,54 @@ try {
   replayProviderTransforms();
   const configured = candidates.get("9router-inferhub").models.get("vendor/model-a");
   assert.deepEqual(configured.variants, [
+    { id: "low", settings: { reasoningEffort: "low" } },
     { id: "high", settings: { reasoningEffort: "low" }, body: { custom_variant: true } },
+    { id: "none", settings: { reasoningEffort: null }, body: { enable_thinking: false } },
+    { id: "thinking", settings: { reasoningEffort: "high" }, body: { enable_thinking: true } },
     { id: "custom", settings: { custom: true } },
-  ]);
-  assert.deepEqual(configured.settings, { custom: true });
-  assert.deepEqual(configured.body, { custom_body: true });
+  ], "host configuration merges by ID; same-ID effort override retains catalog toggle body");
+  const saved = configuredVariants.splice(0);
+  replayModelTransforms();
+  assert.deepEqual(
+    candidates.get("9router-inferhub").models.get("vendor/model-a").variants,
+    providerRecords.get("9router-inferhub").models.get("vendor/model-a").variants,
+    "empty host variants array leaves catalog variants intact",
+  );
+  configuredVariants.push(...saved);
+  replayModelTransforms();
+  const replayed = candidates.get("9router-inferhub").models.get("vendor/model-a");
+  assert.deepEqual(replayed.settings, { custom: true });
+  assert.deepEqual(replayed.body, { custom_body: true });
   assert.equal(
     providerRecords.get("9router-inferhub").models.get("vendor/model-a").settings,
     undefined,
     "source models remain unmodified by overrides",
   );
   const sourceModel = () => providerRecords.get("9router-inferhub").models.get("vendor/model-a");
-  assert.deepEqual(sourceModel().variants.map((v) => v.id), ["low", "high"]);
-  // Force a changed catalog without waiting for its normal TTL.
+  assert.deepEqual(sourceModel().variants.map((v) => v.id), ["low", "high", "none", "thinking"]);
+  // Force changed controls, fail publication, then retry identical discovery.
   const { rm } = await import("node:fs/promises");
   await rm(join(process.env.XDG_CACHE_HOME, "opencode-9router", "models-dev.json"));
   effortValues = ["low", "high", "max"];
-  refreshEvent({ type: "provider.updated" });
-  const refreshDeadline = Date.now() + 2000;
-  while (Date.now() < refreshDeadline && sourceModel().variants.length !== 3) {
-    await delay(20);
-  }
-  assert.deepEqual(sourceModel().variants.map((v) => v.id), effortValues, "same model IDs refresh changed controls");
-  assert.equal(
-    candidates.get("9router-inferhub").models.get("vendor/model-a").variants[0].settings.reasoningEffort,
-    "low",
-    "configured overrides survive refresh",
-  );
-  await cleanup();
-  console.log("V2 late config-provider lifecycle, refresh, and override preservation checks passed");
+  reloadFailures = 1;
+  const before = reloadAttempts;
+  await requestRefresh();
+  await until(() => refreshFailures === 1, "failed publication reported");
+  assert.equal(reloadAttempts, before + 1);
+  assert.equal(sourceModel().variants.some((v) => v.id === "max"), false, "failed reload did not publish controls");
+  await requestRefresh();
+  await until(() => sourceModel().variants.some((v) => v.id === "max"), "identical discovery retries failed publication");
+  assert.equal(reloadAttempts, before + 2);
+  assert.deepEqual(sourceModel().variants.map((v) => v.id), [...effortValues, "none", "thinking"]);
+  const refreshed = candidates.get("9router-inferhub").models.get("vendor/model-a");
+  assert.ok(refreshed.variants.some((v) => v.id === "max"), "provider replay refreshes modeled candidates");
+  assert.equal(refreshed.variants.find((v) => v.id === "high").settings.reasoningEffort, "low", "configured override survives refresh");
+  assert.deepEqual(refreshed.variants.find((v) => v.id === "thinking"), {
+    id: "thinking", settings: { reasoningEffort: "high" }, body: { enable_thinking: true },
+  });
+  console.log("V2 late provider, host-modeled overlays, refresh, and publication retry checks passed");
 } finally {
+  await cleanup?.();
+  console.error = originalError;
   globalThis.fetch = originalFetch;
 }

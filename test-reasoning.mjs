@@ -86,6 +86,14 @@ assert.deepEqual(info([{ type: "toggle" }]).variants, [
 assert.deepEqual(info(effort("high"), { variants: {} }).variants, []);
 assert.deepEqual(info(effort("high"), { variants: { custom: { reasoningEffort: "low" } } }).variants, [{ id: "custom", settings: { reasoningEffort: "low" } }]);
 assert.equal(info(effort("high")).settings?.reasoningEffort, undefined, "no default effort injected");
+for (const options of [
+  [...effort("none", "high"), { type: "toggle" }],
+  [{ type: "toggle" }, ...effort("none", "high")],
+]) {
+  assert.deepEqual(info(options).variants.find((v) => v.id === "none"), {
+    id: "none", settings: { reasoningEffort: "none" },
+  }, "advertised effort wins a toggle ID collision in either catalog order");
+}
 
 const temp = await mkdtemp(join(tmpdir(), "opencode-9router-reasoning-"));
 const previousCache = process.env.XDG_CACHE_HOME;
@@ -118,6 +126,14 @@ try {
   const before = requests;
   assert.deepEqual(JSON.parse(JSON.stringify(await discover())), JSON.parse(JSON.stringify(models)), "cache round trip preserves controls");
   assert.equal(requests, before, "fresh discovery cache avoids fetches");
+  const { NineRouterPlugin } = await import("./dist/plugin.js");
+  const hooks = await NineRouterPlugin({ client: { app: { log: async () => {} } } });
+  const legacy = { provider: { "9router": { options: { baseURL: "https://router.test" } } } };
+  await hooks.config(legacy);
+  const legacyModels = legacy.provider["9router"].models;
+  assert.equal(legacyModels["openrouter/z-ai/glm-5.3-flash"].reasoning, true);
+  for (const model of Object.values(legacyModels)) assert.equal("reasoning_options" in model, false, "V1 hook omits internal V2 controls");
+  assert.deepEqual(legacyModels.executor.variants, forceComboConfig().variants, "V1 combo variants remain intact");
   const file = join(temp, "opencode-9router", `discovery-9router-${Buffer.from("https://router.test").toString("base64url")}.json`);
   assert.equal(JSON.parse(await readFile(file, "utf8")).v, DISCOVERY_CACHE_VERSION);
   assert.ok(DISCOVERY_CACHE_VERSION > 4, "reject version 4 discovery caches");
@@ -143,7 +159,7 @@ try {
   httpModule = adapterRequire.resolve("effect/unstable/http");
 }
 const { HttpClientRequest, HttpClientResponse } = await import(pathToFileURL(httpModule).href);
-const { LLM, LLMClient } = await import("@opencode/ai");
+const { LLM, LLMClient, mergeProviderOptions: mergeOverlay } = await import("@opencode/ai");
 const { model } = await import("@opencode/ai/providers/openai-compatible");
 const { RequestExecutor } = await import("@opencode/ai/route");
 const captured = [];
@@ -156,9 +172,13 @@ const executor = Layer.succeed(RequestExecutor.Service, RequestExecutor.Service.
   }),
 }));
 const runtime = LLMClient.layer.pipe(Layer.provide(executor));
+// Relevant 2.1.4 resolver seam: provider/model settings, then variant overlays.
+// core/src/provider.ts mergeOverlay and core/src/model-resolver.ts withVariant at
+// 68bc26b7da1990ce10ffecfbc1e09eb13aa5d824; adapter execution below is real.
 async function capture(variant = {}, inherited = {}) {
+  const { body, ...settings } = inherited;
   await Effect.runPromise(LLM.generate(LLM.request({
-    model: model("catalog-model", { baseURL: "https://capture.invalid/v1", apiKey: "unused", ...inherited, ...variant.settings, body: variant.body }),
+    model: model("catalog-model", { baseURL: "https://capture.invalid/v1", apiKey: "unused", ...mergeOverlay(settings, variant.settings), body: mergeOverlay(body, variant.body) }),
     prompt: "ping",
   })).pipe(Effect.provide(runtime)));
   return captured.at(-1).body;
@@ -181,8 +201,19 @@ for (const inherited of ["high", "none"]) {
   }
 }
 assert.equal((await capture({}, { reasoningEffort: "high" })).reasoning_effort, "high", "unselected mode preserves configured effort");
+// Internal ModelConfig replacement is distinct from native host config overlays.
 const explicit = info([{ type: "toggle" }], { variants: { thinking: { reasoningEffort: "low" } } }).variants[0];
 const explicitBody = await capture(explicit, { reasoningEffort: "high" });
 assert.equal(explicitBody.reasoning_effort, "low", "explicit variant replaces catalog toggle and inherited effort");
 assert.equal("enable_thinking" in explicitBody, false, "catalog toggle must not leak into explicit variant");
-console.log("Reasoning catalog, variants, combos, cache, and captured adapter requests passed");
+const configuredToggle = {
+  ...toggles[1],
+  settings: mergeOverlay(toggles[1].settings, { reasoningEffort: "low" }),
+};
+const configuredToggleBody = await capture(configuredToggle, { reasoningEffort: "none" });
+assert.equal(configuredToggleBody.reasoning_effort, "low", "same-ID host effort override wins the null sentinel");
+assert.equal(configuredToggleBody.enable_thinking, true, "same-ID host overlay retains unspecified toggle body");
+assert.deepEqual(mergeOverlay({ nested: { a: 1, keep: true }, list: [1], effort: "high" }, {
+  nested: { a: 2 }, list: [2], effort: null, ignored: undefined,
+}), { nested: { a: 2, keep: true }, list: [2], effort: null }, "host-modeled overlay keeps nested null and replaces arrays");
+console.log("Reasoning catalog, variants, combos, V1, cache, and captured adapter requests passed");
